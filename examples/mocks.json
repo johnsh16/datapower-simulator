@@ -1,0 +1,6 @@
+[
+  { "match": { "method": "POST", "target": "https://auth.example.com/oauth2/token" },
+    "response": { "statusCode": 200, "body": { "access_token": "abc" } } },
+  { "match": { "target": "https://orders.example.com/*" },
+    "response": { "statusCode": 201, "headers": { "X-Trace": "1" }, "body": { "id": "ORD-7", "state": "NEW" } } }
+]

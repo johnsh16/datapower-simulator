@@ -1,0 +1,28 @@
+{
+  "name": "gws-sim",
+  "version": "0.1.0",
+  "description": "DataPower GatewayScript simulator for Node.js with mockable urlopen",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "example": "node examples/run-example.js"
+  },
+  "keywords": [
+    "datapower",
+    "gatewayscript",
+    "mock",
+    "urlopen"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
+    "xpath": "^0.0.36"
+  },
+  "bin": {
+    "gws-run": "bin/gws-run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
