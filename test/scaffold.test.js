@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { analyze, createTest, lit } = require('../lib/scaffold');
 
 const ROOT = path.join(__dirname, '..');
@@ -135,4 +135,36 @@ test('CLI: --yes creates and runs a test; guided mode reads piped answers', () =
   const c = spawnSync(process.execPath, [CLI, GREET, '--yes', '--out', out2], { encoding: 'utf8', env: CLEAN_ENV });
   assert.equal(c.status, 1); // refuses to overwrite without --force
   assert.match(c.stdout, /Stopped without changing anything/);
+});
+
+/**
+ * Run the CLI with stdin left open after the answers, the way a terminal behaves.
+ * Resolves with the exit code and output, or reports a hang after `limitMs`.
+ */
+function runWithOpenStdin(args, answers, limitMs = 20000) {
+  return new Promise((resolve) => {
+    const c = spawn(process.execPath, [CLI, ...args], { stdio: ['pipe', 'pipe', 'pipe'], env: CLEAN_ENV });
+    let stdout = '', stderr = '';
+    c.stdout.on('data', (d) => { stdout += d; });
+    c.stderr.on('data', (d) => { stderr += d; });
+    c.stdin.write(answers.join('\n') + '\n'); // note: never c.stdin.end()
+    const timer = setTimeout(() => { c.kill(); resolve({ hung: true, stdout, stderr }); }, limitMs);
+    c.on('exit', (code) => { clearTimeout(timer); resolve({ hung: false, code, stdout, stderr }); });
+  });
+}
+
+test('CLI: Node exits once the test is generated, even with stdin still open', async () => {
+  const out = path.join(TMP, 'open-stdin.test.js');
+  const r = await runWithOpenStdin([GREET, '--interactive'], ['', '{"name":"ada"}', out, '{"displayName":"Ada"}']);
+  assert.equal(r.hung, false, 'the generator kept running after it finished');
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(fs.existsSync(out));
+  // the whole summary was flushed before exiting
+  assert.match(r.stdout, /3\. Add a test for any other case your script handles/);
+
+  // early exits release the terminal too: refusing to overwrite the file just written
+  const again = await runWithOpenStdin([GREET, '--interactive'], ['', '{"name":"ada"}', out, 'n']);
+  assert.equal(again.hung, false, 'the generator kept running after refusing to overwrite');
+  assert.equal(again.code, 1);
+  assert.match(again.stdout, /Stopped without changing anything/);
 });
