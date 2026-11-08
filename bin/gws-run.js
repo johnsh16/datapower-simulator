@@ -9,7 +9,11 @@
  *   --params <file.json>      session.parameters
  *   --mocks <file.js|json>    urlopen mocks: JSON array of route definitions, or a JS
  *                             module exporting an array or a function (gw) => {...}
- *   --local-dir <dir>         directory backing local:/// (default: the script's directory)
+ *   --local-dir <dir>         the folder on this computer that stands for local:///. It must
+ *                             contain the script and hold files in the same layout as the
+ *                             appliance (local:///lib/x.js -> <dir>/lib/x.js). Relative to the
+ *                             current directory, or absolute. Default: worked out from the
+ *                             local:/// files the script uses, else the script's folder.
  *   --store-dir <dir>         directory backing store:///
  *   --passthrough             send unmatched urlopen requests to the real network
  *   --log <level>             echo logs at/above level (debug|info|notice|warn|error)
@@ -29,6 +33,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { Gateway } = require('..');
+const { findLocalRefs, checkLocalDir, suggestLocalDir } = require('../lib/local-dir');
 
 const args = process.argv.slice(2);
 const opt = {};
@@ -49,8 +54,25 @@ if (!script || opt.help) {
 const readJson = (f) => (f ? JSON.parse(fs.readFileSync(f, 'utf8')) : undefined);
 const readInput = (v) => (v === undefined ? undefined : fs.existsSync(v) ? fs.readFileSync(v) : v);
 
+// local:/// on this machine: checked once, so a wrong --local-dir fails with a clear message
+// instead of a 'Cannot find module local:///...' from deep inside the script.
+let localDir;
+if (fs.existsSync(script) && !/^(local|store|temporary):/.test(script)) {
+  const refs = findLocalRefs(fs.readFileSync(script, 'utf8'));
+  if (opt['local-dir']) {
+    const check = checkLocalDir(opt['local-dir'], script, refs);
+    if (!check.ok) { console.error(`--local-dir ${opt['local-dir']}: ${check.problem}`); process.exit(1); }
+    for (const f of check.missing) console.error(`warning: ${f.url} isn't in --local-dir (looked for ${f.file})`);
+    localDir = check.dir;
+  } else {
+    localDir = suggestLocalDir(script, refs);
+  }
+} else {
+  localDir = opt['local-dir'] ? path.resolve(opt['local-dir']) : process.cwd();
+}
+
 const gatewayOptions = () => ({
-  localDir: opt['local-dir'] || path.dirname(path.resolve(script)),
+  localDir,
   storeDir: opt['store-dir'],
 });
 const runOptions = () => ({

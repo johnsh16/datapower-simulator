@@ -38,9 +38,35 @@ On DataPower, a GatewayScript action receives a request, may call other services
 
 Three things to know:
 
-- **`local:///` is a folder on your machine.** You choose it with the `localDir` option (or `--local-dir` on the command line). `local:///greet.js` then means `<localDir>/greet.js`, and `require('local:///lib/x.js')` works the same way.
+- **`local:///` is a folder on your machine.** On DataPower, `local:///` is your domain's `local:` directory. Here you point it at a folder on your computer that holds the same files in the same layout, using the `localDir` option or `--local-dir` on the command line. See [Choosing the `local:///` folder](#choosing-the-local-folder) below.
 - **Backends are fake by default.** Any `urlopen.open()` call that doesn't match a mock you set up fails with an error telling you exactly which URL was unmatched. Nothing reaches the real network unless you ask for it.
 - **Scripts need no changes.** Write them exactly as you would for the appliance. The same file runs in both places.
+
+### Choosing the `local:///` folder
+
+The folder you give for `local:///` must:
+
+- **be a folder, not a file**, given relative to the directory you run the command from, or as an absolute path;
+- **contain your script**, directly or in a subfolder;
+- **mirror the appliance's layout**, so every `local:///...` path your script uses exists at the same place under it.
+
+For example, with this project:
+
+```
+my-gateway/              <- you run commands here
+└── local/               <- local:/// is this folder: --local-dir local
+    ├── apis/orders.js   <- the script is local:///apis/orders.js
+    └── lib/util.js      <- require('local:///lib/util.js') finds this file
+```
+
+| If you give | The script is | `local:///lib/util.js` resolves to | Works? |
+|---|---|---|---|
+| `local` | `local:///apis/orders.js` | `local/lib/util.js` | yes |
+| `local/apis` | `local:///orders.js` | `local/apis/lib/util.js` | no, file missing |
+| `.` | `local:///local/apis/orders.js` | `./lib/util.js` | no, file missing |
+| `local/apis/orders.js` | | | no, that's a file |
+
+You usually don't need to choose. When you leave it out, the tools pick the deepest folder above your script where every `local:///` file the script mentions exists, which is the first row here. The test generator shows this suggestion, explains the rules, and checks your answer before going on.
 
 ## 3. Meet the example script
 
@@ -109,7 +135,7 @@ Add `--json` to any command to see the full result, including service variables 
 | `--contexts <file.json>` | Named contexts produced by earlier actions |
 | `--params <file.json>` | `session.parameters` |
 | `--mocks <file.json or .js>` | Backend responses |
-| `--local-dir <dir>` | Folder for `local:///` (defaults to the script's folder) |
+| `--local-dir <dir>` | The folder that stands for `local:///` (see [above](#choosing-the-local-folder)). Defaults to the folder that makes the script's `local:///` paths resolve. |
 | `--passthrough` | Send unmatched requests to the real network |
 | `--log <level>` | Print logs at this level and above |
 | `--json` | Print the full result as JSON |
@@ -243,7 +269,7 @@ It asks, one at a time:
 | Question | What to give it |
 |---|---|
 | Which script? | The `.js` file. It lists the GatewayScripts it finds. |
-| Which folder is `local:///`? | The folder from step 1. Press Enter to accept the suggestion. |
+| Where is `local:///`? | The folder from step 1 (`local` in the example), relative to where you ran the command. Press Enter to accept the suggestion. If the answer can't be right (it's a file, doesn't contain the script, or is missing a `local:///` file the script uses), it tells you why and asks again. |
 | A sample request body | A realistic request, pasted on one line or as a file path. This matters: it decides which path through your script runs. |
 | Service variables | Shown only if your script reads them, such as `var://service/URI`. Press Enter to keep a default. |
 | Where to save the test | Press Enter for `test/<script>.test.js`. |
@@ -293,7 +319,8 @@ Run `npx gws-new-test --help` for every option. Once your tests pass, deploy the
 | Message or symptom | What it means |
 |---|---|
 | `urlopen: no mock matched GET https://...` | The script called a URL you didn't mock. Check `res.urlopenCalls` to see the exact URL and method, then add a matching `when()`. |
-| `Cannot find module 'local:///...'` | `localDir` points at the wrong folder. It should be the folder that `local:///` maps to. |
+| `Cannot find module 'local:///...'` | `local:///` points at the wrong folder, often one level too deep. It must be the folder whose layout matches the appliance's `local:`; see [Choosing the `local:///` folder](#choosing-the-local-folder). |
+| `--local-dir ...: <script> isn't inside ...` | The folder you gave doesn't contain the script. Give the script's folder or one of its parents. |
 | `Cannot find module 'lodash'` | npm packages aren't available on DataPower, so they're refused here too. |
 | `module 'mq' ... is not emulated` | `jose`, `mq`, `sql`, `ssh` and `b2b` need appliance objects. Provide a fake with `new Gateway({ modules: { mq: {...} } })`. |
 | `transform.xslt: no simulated handler` | Stylesheets aren't executed. Register the result: `gw.transforms['local:///map.xsl'] = (doc, params) => '<out/>'`. |

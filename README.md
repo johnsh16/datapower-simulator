@@ -17,7 +17,7 @@ node examples/run-example.js   # token + backend orchestration with a retried 50
 ```js
 const { Gateway } = require('gws-sim');
 
-const gw = new Gateway({ localDir: './local' });          // local:/// maps here
+const gw = new Gateway({ localDir: './local' });          // local:/// maps here: same layout as the appliance's local:
 
 gw.urlopen
   .when({ method: 'POST', target: 'https://auth/token' }).reply(200, { access_token: 'abc' })
@@ -106,7 +106,7 @@ Mocked delays are capped at 25 ms (`maxSimulatedDelayMs`) so timeout tests stay 
 
 ## Gateway options
 
-`localDir`, `storeDir`, `temporaryDir`, `printLogs` (`true` or a level), `appendOutput`, `allowNodeModules`, `maxSimulatedDelayMs`, `realDelays`, `timeoutMs` (default 30 s; a run that never finishes fails), `serviceVars` / `systemVars` (defaults for every run), `modules`, `globals`, `mocks`, `transforms`, `rules`, `keys`.
+`localDir` (the folder that stands for `local:///`; it must hold files in the same layout as the appliance, so `local:///lib/x.js` is `<localDir>/lib/x.js`), `storeDir`, `temporaryDir`, `printLogs` (`true` or a level), `appendOutput`, `allowNodeModules`, `maxSimulatedDelayMs`, `realDelays`, `timeoutMs` (default 30 s; a run that never finishes fails), `serviceVars` / `systemVars` (defaults for every run), `modules`, `globals`, `mocks`, `transforms`, `rules`, `keys`.
 
 ## Run options
 
