@@ -91,18 +91,22 @@ Mocked delays are capped at 25 ms (`maxSimulatedDelayMs`) so timeout tests stay 
 | `console` | `debug/info/log/notice/warn/error/critical/alert/emerg/trace`, `console.options({ category })` |
 | `header-metadata` | `original` (read-only), `current`, `response`: `get()`, `get(name)` (case-insensitive), `set`, `remove`, `headers`, `statusCode` (`404` or `'404 Not Found'`), `reasonPhrase` |
 | `service-metadata` | `getVar/setVar/list`, camelCase properties derived from any `var://service/…` path (`sm.protocolMethod`, `sm.URI`, `sm.URLIn`, `sm.mpgw.skipBackside = true`), plus `var://context/…`, `var://local/…`, `var://system/…` |
-| `system-metadata` | `getVar/setVar/list` |
+| `system-metadata` | `getVar/setVar/list`, plus `getVariable/setVariable` |
+| `fs` | DataPower's `fs` (not Node's): `readFile`, `readAsJSON`, `readAsXML`, `exists`, `writeFile`, `appendFile`, `rename`, `truncate`, `unlink`. Reads `local:`, `store:`, `temporary:`; writes `temporary:` only, with a `TTL` in seconds (default 10, `0` keeps the file). `temporary:///` is shared by all runs of a `Gateway`, so files outlive one transaction |
+| `sprintf` | `sprintf()` / `vsprintf()` with the documented specifiers, flags, and `%2$s` argument swapping |
 | `urlopen` | `open(options|target, cb)` — fully mockable as above |
 | `transform` | `xpath()` evaluated for real; `xslt()`/`xquery()` call handlers you register: `gw.transforms['local:///x.xsl'] = (doc, params) => result` |
 | `multistep` | `callRule()` calls `gw.rules[name] = async (inputCtx, outputCtx) => {}` |
 | `apim` | `getvariable/setvariable`, `output()`, `error()`, `readInputAs*` (API Connect policies) |
 | `crypto` | Node crypto; `'name:key'` references resolve from `gw.keys` |
 | `jwt` | `JWTEncoder` / `JWTDecoder` with sign/verify/validate for HS/RS/PS/ES — an approximation of the appliance API; JWE not emulated |
-| `util` | Node `util` + `safeeval()` |
-| Node subset | `assert`, `buffer`, `events`, `path`, `punycode`, `querystring`, `string_decoder`, `url`, `zlib`, `buffers` |
+| `util` | The documented DataPower set: `format`, `inspect`, `inherits`, `isArray`, `isDate`, `isError`, `isRegExp`, and the XML helpers `isNode`, `isNodeList`, `isNamedNodeMap`. Other Node `util` functions work with a warning |
+| Node subset | Documented for DataPower: `assert`, `punycode`, `querystring`, `url` (plus the `Buffer` global). `buffer`, `events`, `path`, `string_decoder`, `zlib` aren't in DataPower's documentation; they load with a warning |
 | `require()` | `local:///`, `store:///`, relative paths. npm packages are refused (as on the appliance) unless `allowNodeModules: true` |
 
-**Not emulated:** `jose`, `mq`, `sql`, `ssh`, `b2b` depend on appliance objects, so they throw a clear error. Supply your own with `new Gateway({ modules: { mq: { … } } })` — any module can be replaced this way (a function value is called with the run environment as a factory).
+**Not emulated:** `jose`, `jwk`, `apigw`, `ratelimit`, `json-xml-converter`, `mgmt`, and `policy-utility` exist on DataPower but depend on appliance objects or configuration. They load, and any call explains how to supply your own with `new Gateway({ modules: { ratelimit: { … } } })`. Any module can be replaced this way (a function value is called with the run environment as a factory). `fs.temporary` and `util.safeTypeOf` are listed for DataPower but undocumented in the sources used, so they throw a clear error.
+
+Which modules DataPower provides, with sources and confidence levels: [docs/MODULES.md](docs/MODULES.md).
 
 ## Gateway options
 
