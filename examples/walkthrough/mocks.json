@@ -1,0 +1,6 @@
+[
+  { "match": { "method": "GET", "target": "https://profiles.example.com/users/ada" },
+    "response": { "statusCode": 200, "body": { "displayName": "Ada Lovelace" } } },
+  { "match": "https://profiles.example.com/users/*",
+    "response": { "statusCode": 404 } }
+]
