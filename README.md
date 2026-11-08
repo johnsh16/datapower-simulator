@@ -129,6 +129,17 @@ test('returns 504 when the backend times out', async () => {
 
 Works the same under Jest or Mocha.
 
+## Profiling
+
+`gws-run --profile` runs a script a few hundred times against your mocks and reports CPU time per line, memory allocated per function, V8 deoptimizations, how long each callback blocks, and findings from the performance checklist (input read twice, `require()` in callbacks, `urlopen` without a timeout, large context variables, leaks, and more):
+
+```bash
+node bin/gws-run.js examples/profiling/local/slow-report.js \
+  --input examples/profiling/request.json --mocks examples/profiling/mocks.js --profile
+```
+
+See [docs/PROFILING.md](docs/PROFILING.md) for how to read the report.
+
 ## Known differences from the appliance
 
 - Default service variable values are placeholders; seed the ones your script depends on.
