@@ -4,9 +4,11 @@ Run DataPower GatewayScript actions locally, unchanged, with the appliance's glo
 
 **New here?** Start with the [step-by-step walkthrough](docs/WALKTHROUGH.md).
 
+**Testing your own script?** Run `npx gws-new-test` (or `npm run new-test` in this repo). It asks a few questions, finds the backends your script calls, and writes a test file that already passes. See [step 8 of the walkthrough](docs/WALKTHROUGH.md#8-create-a-test-for-your-own-script).
+
 ```bash
 npm install
-npm test                       # 22 tests
+npm test                       # simulator and test-generator tests
 node examples/run-example.js   # token + backend orchestration with a retried 503
 ```
 

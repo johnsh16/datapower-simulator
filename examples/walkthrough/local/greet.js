@@ -28,6 +28,12 @@ session.input.readAsJSON(function (err, req) {
       session.output.write({ error: 'no such user' });
       return;
     }
+    if (resp.statusCode < 200 || resp.statusCode > 299) {
+      console.error('profile service returned %d', resp.statusCode);
+      hm.response.statusCode = '502 Bad Gateway';
+      session.output.write({ error: 'profile service unavailable' });
+      return;
+    }
     resp.readAsJSON(function (err, profile) {
       if (err) {
         console.error('profile service sent invalid JSON: %s', err.errorMessage);

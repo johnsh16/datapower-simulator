@@ -35,6 +35,16 @@ test('returns 404 when the profile service has no such user', async () => {
   assert.deepEqual(res.output.json(), { error: 'no such user' });
 });
 
+test('returns 502 when the profile service returns a server error', async () => {
+  const gw = newGateway();
+  gw.urlopen.when('https://profiles.example.com/users/ada').reply(500, { error: 'db down' });
+
+  const res = await gw.run('local:///greet.js', { input: { name: 'ada' } });
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(res.output.json(), { error: 'profile service unavailable' });
+});
+
 test('returns 502 when the profile service times out', async () => {
   const gw = newGateway();
   gw.urlopen.when('https://profiles.example.com/users/*').timeout();

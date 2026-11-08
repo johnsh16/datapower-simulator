@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "example": "node examples/run-example.js",
-    "test:walkthrough": "node --test examples/walkthrough/greet.test.js"
+    "test:walkthrough": "node --test examples/walkthrough/greet.test.js",
+    "new-test": "node bin/gws-new-test.js"
   },
   "keywords": [
     "datapower",
@@ -21,7 +22,8 @@
     "xpath": "^0.0.36"
   },
   "bin": {
-    "gws-run": "bin/gws-run.js"
+    "gws-run": "bin/gws-run.js",
+    "gws-new-test": "bin/gws-new-test.js"
   },
   "engines": {
     "node": ">=18"

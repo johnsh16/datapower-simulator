@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * gws-new-test: create a test file for a GatewayScript.
+ *
+ *   npx gws-new-test                    guided: asks for everything
+ *   npx gws-new-test path/to/script.js  guided, script already chosen
+ *   npx gws-new-test script.js --yes    no questions, use defaults
+ *
+ * Inside this repository, use `npm run new-test -- <args>` instead of `npx gws-new-test`.
+ *
+ * Options
+ *   --input <file|json|text>   sample request body
+ *   --service-vars <file.json> service variables, e.g. { "var://service/URI": "/orders" }
+ *   --local-dir <dir>          folder that local:/// maps to (default: the script's folder)
+ *   --out <file>               where to write the test (default: test/<script>.test.js)
+ *   --force                    overwrite an existing test file
+ *   --yes                      don't ask questions; use defaults and placeholders
+ *   --no-run                   don't run the new test after creating it
+ */
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const { spawnSync } = require('child_process');
+const { createTest, analyze } = require('../lib/scaffold');
+
+// ---- arguments ---------------------------------------------------------------
+const argv = process.argv.slice(2);
+const opts = {};
+const positional = [];
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === '--help' || a === '-h') opts.help = true;
+  else if (['--force', '--yes', '--no-run', '--interactive'].includes(a)) opts[a.slice(2)] = true;
+  else if (a.startsWith('--')) opts[a.slice(2)] = argv[++i];
+  else positional.push(a);
+}
+if (opts.help) {
+  const doc = fs.readFileSync(__filename, 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1];
+  console.log(doc.replace(/^ \* ?/gm, '').trim());
+  process.exit(0);
+}
+const interactive = !opts.yes && (opts.interactive || process.stdin.isTTY);
+
+// ---- prompting (works for a terminal and for piped answers) ------------------
+let lines;
+function prompter() {
+  if (!lines) {
+    const rl = readline.createInterface({ input: process.stdin, terminal: false });
+    lines = rl[Symbol.asyncIterator]();
+    process.on('exit', () => rl.close());
+  }
+  return lines;
+}
+async function ask(question, fallback) {
+  if (!interactive) return fallback;
+  process.stdout.write(`\n${question}${fallback !== undefined && fallback !== '' ? ` [${fallback}]` : ''}\n> `);
+  const { value, done } = await prompter().next();
+  if (!interactive || !process.stdin.isTTY) process.stdout.write((done ? '' : value) + '\n');
+  const answer = done ? '' : String(value).trim();
+  return answer === '' ? fallback : answer;
+}
+
+/** A file path, JSON, or plain text -> the value to use. */
+function readValue(answer, { preferJson = true } = {}) {
+  if (answer === undefined || answer === '') return undefined;
+  let text = answer;
+  if (fs.existsSync(answer) && fs.statSync(answer).isFile()) text = fs.readFileSync(answer, 'utf8');
+  if (preferJson) { try { return JSON.parse(text); } catch { /* not JSON */ } }
+  return text;
+}
+
+function findScripts(dir, out = [], depth = 0) {
+  if (depth > 4 || out.length >= 12) return out;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.') || ['node_modules', 'test', 'tests', 'lib', 'bin', 'docs'].includes(e.name)) continue;
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) findScripts(p, out, depth + 1);
+    else if (/\.js$/.test(e.name) && !/\.test\.js$|mocks?\.js$|run-example|config\.js$/.test(e.name)) {
+      const src = fs.readFileSync(p, 'utf8');
+      if (/\bsession\.(input|output|name|reject)\b|require\(\s*['"](urlopen|header-metadata|service-metadata)['"]/.test(src)) out.push(path.relative(process.cwd(), p));
+    }
+  }
+  return out;
+}
+
+const say = (s = '') => console.log(s);
+
+// ---- main --------------------------------------------------------------------
+(async () => {
+  say('gws-new-test: create a test for a GatewayScript');
+
+  // 1. which script
+  let script = positional[0];
+  if (!script) {
+    if (!interactive) { console.error('Usage: gws-new-test <script.js> [options]   (or run it in a terminal to be asked)'); process.exit(1); }
+    const found = findScripts(process.cwd());
+    if (found.length) say('\nGatewayScripts found here:\n' + found.map((f) => '  ' + f).join('\n'));
+    script = await ask('Which script do you want to test? (path to the .js file)', found[0]);
+  }
+  if (!script || !fs.existsSync(script)) { console.error(`\nCan't find the script '${script}'.`); process.exit(1); }
+  const source = fs.readFileSync(script, 'utf8');
+  const info = analyze(source);
+
+  // 2. local:/// folder
+  const localDir = opts['local-dir'] || await ask(
+    'Which folder does local:/// stand for? Use the folder that holds your scripts, so require(\'local:///...\') paths resolve.',
+    path.relative(process.cwd(), path.dirname(path.resolve(script))) || '.');
+
+  // 3. request body
+  let input = readValue(opts.input, { preferJson: info.inputKind !== 'xml' });
+  if (input === undefined && info.inputKind) {
+    const label = { json: 'JSON', xml: 'XML', buffer: 'text' }[info.inputKind];
+    const example = { json: '{ "id": 1 }', xml: '<request><id>1</id></request>', buffer: 'hello' }[info.inputKind];
+    for (;;) {
+      const answer = await ask(
+        `The script reads a ${label} request body. Paste a realistic one on one line, or give a file path.\n` +
+        `A realistic body matters: it decides which backend calls the script makes. (example: ${example})`, '');
+      input = readValue(answer, { preferJson: info.inputKind !== 'xml' });
+      if (!interactive || answer === undefined || info.inputKind !== 'json' || typeof input !== 'string') break;
+      say('  That isn\'t valid JSON. Try again, or press Enter to skip.');
+    }
+  }
+
+  // 3b. service variables that shape the request (URI, method, ...)
+  const serviceVars = opts['service-vars'] ? readValue(opts['service-vars']) : {};
+  const { defaultServiceVars } = require('../lib/modules/service-metadata');
+  const defaults = defaultServiceVars();
+  const toAsk = info.serviceVars.filter((v) => !(v in serviceVars));
+  if (interactive && toAsk.length) {
+    say('\nThe script reads these service variables. Press Enter to keep the simulator default.');
+    for (const v of toAsk) {
+      const answer = await ask(`  ${v}`, defaults[v] !== undefined && defaults[v] !== '' ? defaults[v] : undefined);
+      if (answer !== undefined) serviceVars[v] = answer;
+    }
+  }
+
+  // 4. output file
+  const base = path.basename(script, '.js');
+  let out = opts.out || await ask('Where should the test file go?', path.join('test', `${base}.test.js`));
+  if (fs.existsSync(out) && !opts.force) {
+    const yes = await ask(`${out} already exists. Overwrite it? (y/N)`, interactive ? 'n' : 'n');
+    if (!/^y/i.test(yes)) { say('\nStopped without changing anything. Use --out to pick another file, or --force.'); process.exit(1); }
+  }
+
+  // 5. discovery + generation
+  say(`\nRunning ${script} to see which backends it calls...`);
+  const result = await createTest({
+    scriptPath: script,
+    localDir,
+    outFile: out,
+    input,
+    serviceVars,
+    date: new Date().toISOString().slice(0, 10),
+    onNewCall: async (b) => {
+      say(`  found: ${b.method} ${b.target}`);
+      const answer = await ask(
+        `  What does ${b.target} normally send back? Paste a sample JSON body on one line, give a file path,\n` +
+        '  or press Enter to use a placeholder for now.', '');
+      return readValue(answer);
+    },
+  });
+
+  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+  fs.writeFileSync(out, result.code);
+  const testCount = result.scenarios.length;
+
+  // 6. run it
+  let summary = '';
+  if (!opts['no-run']) {
+    // a clean environment: inside another test runner, NODE_TEST_CONTEXT would change the output format
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', out], { encoding: 'utf8', env });
+    const pass = Number((r.stdout.match(/^# pass (\d+)/m) || [])[1] || 0);
+    const fail = Number((r.stdout.match(/^# fail (\d+)/m) || [])[1] || 0);
+    summary = fail ? ` (${pass} passing, ${fail} failing; see below)` : ` (all ${pass} passing)`;
+  }
+
+  say(`\nCreated ${out} with ${testCount} test${testCount === 1 ? '' : 's'}${summary}.`);
+  if (result.spec.backends.length) {
+    say('\nBackends it mocks:');
+    for (const b of result.spec.backends) say(`  ${b.method} ${b.target}${b.placeholder ? '   (placeholder response)' : ''}`);
+  }
+  if (result.warnings.length) {
+    say('\nWorth a look:');
+    for (const w of result.warnings) say('  - ' + w);
+  }
+  say('\nNext steps:');
+  say(`  1. Open ${out} and work through the TODO comments.`);
+  say(`  2. Run it:  node --test ${out.split(path.sep).join('/')}`);
+  say('  3. Add a test for any other case your script handles. Copy an existing test and change the request or the backend override.');
+})().catch((e) => {
+  console.error('\n' + (process.env.GWS_DEBUG ? (e.stack || e) : (e.message || e)));
+  if (!process.env.GWS_DEBUG) console.error('(set GWS_DEBUG=1 to see the full error)');
+  process.exit(1);
+});
