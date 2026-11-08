@@ -38,19 +38,36 @@ for (let i = 0; i < argv.length; i++) {
 if (opts.help) {
   const doc = fs.readFileSync(__filename, 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1];
   console.log(doc.replace(/^ \* ?/gm, '').trim());
-  process.exit(0);
+  process.exit(0); // nothing has opened stdin yet, so exiting here is safe
 }
 const interactive = !opts.yes && (opts.interactive || process.stdin.isTTY);
 
 // ---- prompting (works for a terminal and for piped answers) ------------------
+let rl;
 let lines;
 function prompter() {
   if (!lines) {
-    const rl = readline.createInterface({ input: process.stdin, terminal: false });
+    rl = readline.createInterface({ input: process.stdin, terminal: false });
     lines = rl[Symbol.asyncIterator]();
-    process.on('exit', () => rl.close());
   }
   return lines;
+}
+/** Stop reading the terminal. An open stdin keeps Node alive, so this must happen before exit. */
+function closePrompts() {
+  if (rl) { rl.close(); rl = null; lines = null; }
+  process.stdin.pause();
+  if (typeof process.stdin.unref === 'function') process.stdin.unref();
+}
+/**
+ * End the process once everything has been written. Nothing may keep Node running
+ * after generation: not the prompt reader, not a timer left by a script under test.
+ * Waiting for stdout/stderr to flush first matters on macOS and Windows, where
+ * writes to pipes or terminals can still be pending when process.exit() is called.
+ */
+function finish(code = 0) {
+  closePrompts();
+  process.exitCode = code;
+  process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));
 }
 async function ask(question, fallback) {
   if (!interactive) return fallback;
@@ -93,12 +110,12 @@ const say = (s = '') => console.log(s);
   // 1. which script
   let script = positional[0];
   if (!script) {
-    if (!interactive) { console.error('Usage: gws-new-test <script.js> [options]   (or run it in a terminal to be asked)'); process.exit(1); }
+    if (!interactive) { console.error('Usage: gws-new-test <script.js> [options]   (or run it in a terminal to be asked)'); return finish(1); }
     const found = findScripts(process.cwd());
     if (found.length) say('\nGatewayScripts found here:\n' + found.map((f) => '  ' + f).join('\n'));
     script = await ask('Which script do you want to test? (path to the .js file)', found[0]);
   }
-  if (!script || !fs.existsSync(script)) { console.error(`\nCan't find the script '${script}'.`); process.exit(1); }
+  if (!script || !fs.existsSync(script)) { console.error(`\nCan't find the script '${script}'.`); return finish(1); }
   const source = fs.readFileSync(script, 'utf8');
   const info = analyze(source);
 
@@ -140,7 +157,7 @@ const say = (s = '') => console.log(s);
   let out = opts.out || await ask('Where should the test file go?', path.join('test', `${base}.test.js`));
   if (fs.existsSync(out) && !opts.force) {
     const yes = await ask(`${out} already exists. Overwrite it? (y/N)`, interactive ? 'n' : 'n');
-    if (!/^y/i.test(yes)) { say('\nStopped without changing anything. Use --out to pick another file, or --force.'); process.exit(1); }
+    if (!/^y/i.test(yes)) { say('\nStopped without changing anything. Use --out to pick another file, or --force.'); return finish(1); }
   }
 
   // 5. discovery + generation
@@ -161,6 +178,7 @@ const say = (s = '') => console.log(s);
     },
   });
 
+  closePrompts(); // every question has been asked; release the terminal before the test run
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, result.code);
   const testCount = result.scenarios.length;
@@ -190,8 +208,9 @@ const say = (s = '') => console.log(s);
   say(`  1. Open ${out} and work through the TODO comments.`);
   say(`  2. Run it:  node --test ${out.split(path.sep).join('/')}`);
   say('  3. Add a test for any other case your script handles. Copy an existing test and change the request or the backend override.');
+  finish(0);
 })().catch((e) => {
   console.error('\n' + (process.env.GWS_DEBUG ? (e.stack || e) : (e.message || e)));
   if (!process.env.GWS_DEBUG) console.error('(set GWS_DEBUG=1 to see the full error)');
-  process.exit(1);
+  finish(1);
 });
