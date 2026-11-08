@@ -2,6 +2,8 @@
 
 This guide takes you from a fresh checkout to a GatewayScript with automated tests that cover the happy path, backend errors, and bad input. It takes about 15 minutes.
 
+> **Just want a test for your own script?** Install (step 1), then jump to [step 8](#8-create-a-test-for-your-own-script). The test generator asks a few questions and writes a passing test file for you.
+
 Everything here uses the files in [`examples/walkthrough/`](../examples/walkthrough), so you can run each step as you read.
 
 **You'll need:** Node.js 18 or later (`node --version`) and git. No DataPower appliance required.
@@ -17,7 +19,7 @@ npm install
 npm test
 ```
 
-The last line should end with `# pass 22` and `# fail 0`. If it does, the simulator is working.
+The output should end with `# pass 29` and `# fail 0`. If it does, the simulator is working.
 
 ## 2. How it fits together
 
@@ -48,7 +50,7 @@ Three things to know:
 |---|---|
 | Profile found | `200` `{ "message": "Hello, Ada Lovelace!" }` |
 | Profile service returns 404 | `404` `{ "error": "no such user" }` |
-| Profile service unreachable, slow, or sends invalid JSON | `502` `{ "error": "profile service unavailable" }` |
+| Profile service unreachable, slow, returns a server error, or sends invalid JSON | `502` `{ "error": "profile service unavailable" }` |
 | Request body isn't valid JSON with a name | `400` with an error message |
 
 Open the file and skim it. It uses `session.input`, `header-metadata`, `service-metadata`, `urlopen`, and `console`, which covers most real scripts.
@@ -121,7 +123,7 @@ npm run test:walkthrough
 # same as: node --test examples/walkthrough/greet.test.js
 ```
 
-You should see five passing tests.
+You should see six passing tests.
 
 Each test follows the same three steps:
 
@@ -216,14 +218,75 @@ Your script then sees `sm.URI === '/orders/42'`, `session.name('tokenResponse')`
 
 Shared code in `local:///` works as on the appliance, so `require('local:///lib/config.js')` loads `<localDir>/lib/config.js`.
 
-## 8. Testing your own scripts
+## 8. Create a test for your own script
 
-1. Copy your scripts into a folder, keeping the same layout they have under `local:///` on the appliance.
-2. Create a test file next to them and point `localDir` at that folder.
-3. Write one test for the normal case, then one for each failure your script handles: each error status, a timeout, a connection failure, and bad input.
-4. Run `node --test path/to/your.test.js` after every change.
+You don't have to start from a blank file. The test generator reads your script, runs it once to find the backends it calls, and writes a test file that already passes.
 
-When the tests pass, deploy the same script files to DataPower. No edits are needed.
+**1. Put your scripts in a folder.** Keep the layout they have under `local:///` on the appliance, so `require('local:///lib/util.js')` still resolves. For example:
+
+```
+my-gateway/
+└── local/
+    ├── orders.js
+    └── lib/util.js
+```
+
+**2. Run the generator and answer its questions.**
+
+```bash
+npx gws-new-test                 # if you installed gws-sim in your own project
+npm run new-test                 # inside this repository
+```
+
+It asks, one at a time:
+
+| Question | What to give it |
+|---|---|
+| Which script? | The `.js` file. It lists the GatewayScripts it finds. |
+| Which folder is `local:///`? | The folder from step 1. Press Enter to accept the suggestion. |
+| A sample request body | A realistic request, pasted on one line or as a file path. This matters: it decides which path through your script runs. |
+| Service variables | Shown only if your script reads them, such as `var://service/URI`. Press Enter to keep a default. |
+| Where to save the test | Press Enter for `test/<script>.test.js`. |
+| What each backend sends back | Asked for every `urlopen` call it finds. Paste a real response body, or press Enter for a placeholder you can fill in later. |
+
+Then it writes the file, runs it, and tells you what to look at:
+
+```
+Created test/orders.test.js with 6 tests (all 6 passing).
+
+Backends it mocks:
+  POST https://auth.example.com/oauth2/token
+  POST https://orders.example.com/orders
+
+Next steps:
+  1. Open test/orders.test.js and work through the TODO comments.
+  2. Run it:  node --test test/orders.test.js
+```
+
+**3. Read what you got.** The file contains one test per situation, each checking what your script does today:
+
+- a normal request
+- each backend failing with a 500
+- each backend timing out
+- a request body that isn't valid JSON or XML (if your script reads one)
+
+Each test pins the status code, the response body, and which backends were called. If a later change alters any of that, the test fails and shows the difference. Values that change on every run, like timestamps, are left out automatically.
+
+**4. Act on the warnings.** The generator points out two kinds of problem:
+
+- *"the script crashed"*: in that situation your script throws instead of responding. The matching test fails until you fix the script. If it only crashes on the normal request, the cause is usually a placeholder backend response missing a field your script reads. Paste a real response into `BACKENDS` in the test file.
+- *"a backend failed but the client still got 200"*: your script hides a failure from its caller. Sometimes that's intended, but it's worth a look. The generator found exactly this in an earlier version of `greet.js`, which answered "Hello, undefined!" when the profile service returned a 500.
+
+**5. Make it yours.** Search the file for `TODO` and replace placeholders with realistic data. To add another case, copy a test and change the request or the backend it overrides. Everything from steps 5 to 7 above works in these files.
+
+Prefer no questions? Pass everything as options:
+
+```bash
+npx gws-new-test local/orders.js --yes \
+  --input request.json --service-vars service-vars.json --out test/orders.test.js
+```
+
+Run `npx gws-new-test --help` for every option. Once your tests pass, deploy the same script files to DataPower. No edits are needed.
 
 ## 9. Troubleshooting
 
@@ -235,6 +298,8 @@ When the tests pass, deploy the same script files to DataPower. No edits are nee
 | `module 'mq' ... is not emulated` | `jose`, `mq`, `sql`, `ssh` and `b2b` need appliance objects. Provide a fake with `new Gateway({ modules: { mq: {...} } })`. |
 | `transform.xslt: no simulated handler` | Stylesheets aren't executed. Register the result: `gw.transforms['local:///map.xsl'] = (doc, params) => '<out/>'`. |
 | `did not complete within 30000ms` | Something kept running, usually a `setInterval` that was never cleared or a callback that was never called. |
+| Generated test says *"the script crashed"* | See step 8, part 4: fix the script, or replace a placeholder backend response with a real one. |
+| Generator found no backend calls | Your sample request probably took an early exit (like a 400). Run it again with a more realistic `--input`. |
 | Output is empty | Check `res.rejected` and `res.error`. Output written after `session.reject()` is discarded. |
 
 ## 10. Where to go next
