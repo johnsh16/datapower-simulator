@@ -29,7 +29,7 @@ function runNodeTest(file) {
 
 test('analyze finds what a script reads', () => {
   const info = analyze(`
-    var sm = require('service-metadata'); var hm = require('header-metadata'); var mq = require('mq');
+    var sm = require('service-metadata'); var hm = require('header-metadata'); var rl = require('ratelimit');
     var t = require('transform'); var ms = require('multistep');
     if (sm.protocolMethod === 'GET') {}
     sm.mpgw.skipBackside = true;
@@ -46,7 +46,7 @@ test('analyze finds what a script reads', () => {
   assert.deepEqual(info.serviceVars.sort(), ['var://service/URL-in', 'var://service/protocol-method']);
   assert.deepEqual(info.contexts, ['prior']); // 'cache' is created by the script itself
   assert.deepEqual(info.parameters, ['region']);
-  assert.deepEqual(info.unsupportedModules, ['mq']);
+  assert.deepEqual(info.unsupportedModules, ['ratelimit']);
   assert.deepEqual(info.transforms, ['local:///x.xsl']);
   assert.deepEqual(info.rules, ['audit']);
 });
