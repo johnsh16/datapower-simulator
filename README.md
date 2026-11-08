@@ -2,6 +2,8 @@
 
 Run DataPower GatewayScript actions locally, unchanged, with the appliance's globals and modules emulated and every `urlopen.open()` answered by responses you define.
 
+**New here?** Start with the [step-by-step walkthrough](docs/WALKTHROUGH.md).
+
 ```bash
 npm install
 npm test                       # 22 tests
