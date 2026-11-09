@@ -12,3 +12,5 @@ function run(script, runOptions = {}, gatewayOptions = {}) {
 /** Profiling (see docs/PROFILING.md). Loaded on first use. */
 module.exports = { Gateway, UrlopenMock, Buffers, XML, run, DEFAULTS };
 Object.defineProperty(module.exports, 'profiler', { enumerable: true, get: () => require('./lib/profiler') });
+/** Test helpers (see docs/TESTING.md). Also available as require('gws-sim/testing'). */
+Object.defineProperty(module.exports, 'testing', { enumerable: true, get: () => require('./lib/testing') });

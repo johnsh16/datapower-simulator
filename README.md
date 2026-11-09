@@ -133,6 +133,24 @@ test('returns 504 when the backend times out', async () => {
 
 Works the same under Jest or Mocha.
 
+### Test helpers
+
+`require('gws-sim/testing')` shortens tests and explains failures. `expectRun(res)` chains checks on the outcome, response, backend calls, logs, variables and files written with `fs`. The setup shortcuts build requests (`request.json(...)`), share mocks across tests (`gatewayFactory`), simulate backends that fail, recover or hang (`failFirst`, `replySequence`, `down`, `slow`), and move time for `fs` TTLs:
+
+```js
+const { expectRun, gatewayFactory, request } = require('gws-sim/testing');
+
+const newGateway = gatewayFactory({ localDir: './local' }, (gw) => gw.urlopen.when(/token/).replyJson({ access_token: 't' }));
+
+test('retries once when the backend is busy', async () => {
+  const gw = newGateway((gw) => gw.urlopen.when(/orders/).failFirst(1).replyJson({ id: 'O1', state: 'NEW' }, 201));
+  const res = await gw.run('local:///orchestrate.js', request.json({ sku: 'X1' }, { method: 'POST', uri: '/orders' }));
+  expectRun(res).status(201).calledBackend(/orders/, { times: 2 });
+});
+```
+
+A failed check prints the run's status, body, backend calls and error logs. See [docs/TESTING.md](docs/TESTING.md).
+
 ## Profiling
 
 `gws-run --profile` runs a script a few hundred times against your mocks and reports CPU time per line, memory allocated per function, V8 deoptimizations, how long each callback blocks, and findings from the performance checklist (input read twice, `require()` in callbacks, `urlopen` without a timeout, large context variables, leaks, and more):

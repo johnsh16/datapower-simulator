@@ -149,7 +149,7 @@ npm run test:walkthrough
 # same as: node --test examples/walkthrough/greet.test.js
 ```
 
-You should see six passing tests.
+You should see twelve passing tests: six in `greet.test.js` and the same six in `greet.helpers.test.js`, which is written with the test helpers.
 
 Each test follows the same three steps:
 
@@ -174,6 +174,21 @@ test('greets a known user', async () => {
 ```
 
 Create a new `Gateway` in each test so mocks from one test never leak into another.
+
+**Shorter tests with the helpers.** `require('gws-sim/testing')` turns the arrange/act/assert steps into a few lines, and failed checks print what the run actually did:
+
+```js
+const newGateway = gatewayFactory({ localDir: path.join(__dirname, 'local') });
+
+test('greets a known user', async () => {
+  const gw = newGateway((g) => g.urlopen.when(PROFILE).replyJson({ displayName: 'Ada Lovelace' }));
+  expectRun(await gw.run('local:///greet.js', request.json({ name: 'ada' })))
+    .status(200)
+    .json({ message: 'Hello, Ada Lovelace!' });
+});
+```
+
+[`greet.helpers.test.js`](../examples/walkthrough/greet.helpers.test.js) has all six tests in this style, and [docs/TESTING.md](TESTING.md) lists every check and shortcut.
 
 **What you can check on the result**
 
