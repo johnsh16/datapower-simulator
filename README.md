@@ -4,7 +4,7 @@ Run DataPower GatewayScript actions locally, unchanged, with the appliance's glo
 
 **New here?** Start with the [step-by-step walkthrough](docs/WALKTHROUGH.md).
 
-**Testing your own script?** Run `npx gws-new-test` (or `npm run new-test` in this repo). It asks a few questions, finds the backends your script calls, and writes a test file that already passes. See [step 8 of the walkthrough](docs/WALKTHROUGH.md#8-create-a-test-for-your-own-script).
+**Testing your own script?** Run `npx gws-new-test` (or `npm run new-test` in this repo). It asks a few questions, finds the backends your script calls, and writes a test file that already passes, plus a profile of the script that uses the same request and mocked backends. See [step 8 of the walkthrough](docs/WALKTHROUGH.md#8-create-a-test-for-your-own-script).
 
 ```bash
 npm install
@@ -163,6 +163,8 @@ A failed check prints the run's status, body, backend calls and error logs. See 
 node bin/gws-run.js examples/profiling/local/slow-report.js \
   --input examples/profiling/request.json --mocks examples/profiling/mocks.js --profile
 ```
+
+For a script you created a test for with `gws-new-test`, profiling is already set up: run `node test/<script>.profile.js`.
 
 See [docs/PROFILING.md](docs/PROFILING.md) for how to read the report.
 

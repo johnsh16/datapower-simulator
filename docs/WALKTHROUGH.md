@@ -399,19 +399,24 @@ It asks, one at a time:
 | Where to save the test | Press Enter for `test/<script>.test.js`. |
 | What each backend sends back | Asked for every `urlopen` call it finds. Paste a real response body, or press Enter for a placeholder you can fill in later. |
 
-Then it writes the file, runs it, and tells you what to look at:
+Then it writes three files, runs the tests, and tells you what to look at:
 
 ```
-Created test/orders.test.js with 6 tests (all 6 passing).
+Created test/orders.test.js with 6 tests (all 6 passing),
+and test/orders.profile.js to profile the script with the same request and backends.
+Both get them from test/orders.setup.js.
 
 Backends it mocks:
   POST https://auth.example.com/oauth2/token
   POST https://orders.example.com/orders
 
 Next steps:
-  1. Open test/orders.test.js and work through the TODO comments.
-  2. Run it:  node --test test/orders.test.js
+  1. Open test/orders.setup.js and test/orders.test.js and work through the TODO comments.
+  2. Run the tests:  node --test test/orders.test.js
+  3. Profile it:     node test/orders.profile.js
 ```
+
+The request and the fake backends live in `orders.setup.js`. The tests in `orders.test.js` and the profile in `orders.profile.js` both load them from there, so you edit them once. The profile reports CPU time per line, memory, and findings from the performance checklist; see [PROFILING.md](PROFILING.md).
 
 **3. Read what you got.** The file contains one test per situation, each checking what your script does today:
 
@@ -424,10 +429,10 @@ Each test pins the status code, the response body, and which backends were calle
 
 **4. Act on the warnings.** The generator points out two kinds of problem:
 
-- *"the script crashed"*: in that situation your script throws instead of responding. The matching test fails until you fix the script. If it only crashes on the normal request, the cause is usually a placeholder backend response missing a field your script reads. Paste a real response into `BACKENDS` in the test file.
+- *"the script crashed"*: in that situation your script throws instead of responding. The matching test fails until you fix the script. If it only crashes on the normal request, the cause is usually a placeholder backend response missing a field your script reads. Paste a real response into `BACKENDS` in the setup file.
 - *"a backend failed but the client still got 200"*: your script hides a failure from its caller. Sometimes that's intended, but it's worth a look. The generator found exactly this in an earlier version of `greet.js`, which answered "Hello, undefined!" when the profile service returned a 500.
 
-**5. Make it yours.** Search the file for `TODO` and replace placeholders with realistic data. To add another case, copy a test and change the request or the backend it overrides. Everything from steps 5 to 7 above works in these files.
+**5. Make it yours.** Search the setup and test files for `TODO` and replace placeholders with realistic data. To add another case, copy a test and change the request or the backend it overrides. Everything from steps 5 to 7 above works in these files.
 
 Prefer no questions? Pass everything as options:
 

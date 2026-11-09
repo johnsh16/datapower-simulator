@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
-const { analyze, createTest, lit } = require('../lib/scaffold');
+const { analyze, createTest, writeTest, lit } = require('../lib/scaffold');
 
 const ROOT = path.join(__dirname, '..');
 const TMP = path.join(__dirname, '.tmp-scaffold');
@@ -60,11 +60,13 @@ test('lit writes readable JavaScript literals', () => {
 test('generated test for the walkthrough script passes as-is', async () => {
   const out = path.join(TMP, 'greet.test.js');
   const r = await createTest({ scriptPath: GREET, outFile: out, input: { name: 'ada' } });
-  fs.writeFileSync(out, r.code);
+  writeTest(r);
 
   assert.deepEqual(r.spec.backends.map((b) => `${b.method} ${b.target}`), ['GET https://profiles.example.com/users/ada']);
   assert.deepEqual(r.scenarios.map((s) => s.kind), ['happy', 'failure', 'timeout', 'badInput']);
-  assert.match(r.code, /require\('\.\.\/\.\.'\)/);       // inside the repo: relative import
+  const setup = r.files.find((f) => f.kind === 'setup');
+  assert.match(setup.code, /require\('\.\.\/\.\.'\)/);  // inside the repo: relative import
+  assert.match(r.code, /require\('\.\/greet\.setup'\)/);
   assert.match(r.code, /responds 502 when GET .* times out/);
 
   const run = runNodeTest(out);
@@ -90,7 +92,7 @@ test('sample responses from onNewCall are used and unlock later calls', async ()
   assert.deepEqual(r.spec.backends.map((b) => b.target), ['https://a.example/first', 'https://b.example/second']);
   assert.ok(r.spec.backends.every((b) => !b.placeholder));
   assert.deepEqual(r.scenarios[0].observed.json, { got: 42 });
-  fs.writeFileSync(out, r.code);
+  writeTest(r);
   // this script has no error handling, so only the normal-request test is expected to pass
   const run = runNodeTest(out);
   assert.match(run.stdout, /^ok \d+ - responds 200 to a normal request$/m);
@@ -104,7 +106,7 @@ test('crashes are flagged and the matching test fails until fixed', async () => 
     });`);
   const out = path.join(TMP, 'crashy.test.js');
   const r = await createTest({ scriptPath: path.join(TMP, 'local', 'crashy.js'), outFile: out });
-  fs.writeFileSync(out, r.code);
+  writeTest(r);
 
   assert.match(r.code, /WARNING: when this file was generated, the script crashed here/);
   assert.ok(r.warnings.some((w) => /placeholder backend response/.test(w)));
@@ -125,6 +127,8 @@ test('CLI: --yes creates and runs a test; guided mode reads piped answers', () =
   const a = spawnSync(process.execPath, [CLI, GREET, '--yes', '--input', '{"name":"ada"}', '--out', out1], { encoding: 'utf8', env: CLEAN_ENV });
   assert.equal(a.status, 0, a.stderr);
   assert.match(a.stdout, /Created .*cli-yes\.test\.js with 4 tests \(all 4 passing\)/);
+  assert.match(a.stdout, /cli-yes\.profile\.js to profile the script with the same request and backends/);
+  assert.ok(fs.existsSync(path.join(TMP, 'cli-yes.setup.js')) && fs.existsSync(path.join(TMP, 'cli-yes.profile.js')));
 
   const out2 = path.join(TMP, 'cli-guided.test.js');
   const answers = ['', '{"name":"ada"}', out2, '{"displayName":"Ada"}'].join('\n') + '\n';
@@ -135,6 +139,12 @@ test('CLI: --yes creates and runs a test; guided mode reads piped answers', () =
   const c = spawnSync(process.execPath, [CLI, GREET, '--yes', '--out', out2], { encoding: 'utf8', env: CLEAN_ENV });
   assert.equal(c.status, 1); // refuses to overwrite without --force
   assert.match(c.stdout, /Stopped without changing anything/);
+
+  // the setup and profile files count too: a new test must not silently replace them
+  fs.rmSync(out1);
+  const d = spawnSync(process.execPath, [CLI, GREET, '--yes', '--out', out1], { encoding: 'utf8', env: CLEAN_ENV });
+  assert.equal(d.status, 1);
+  assert.match(d.stdout, /These already exist: .*cli-yes\.setup\.js, .*cli-yes\.profile\.js/);
 });
 
 /**
@@ -160,7 +170,7 @@ test('CLI: Node exits once the test is generated, even with stdin still open', a
   assert.equal(r.code, 0, r.stderr);
   assert.ok(fs.existsSync(out));
   // the whole summary was flushed before exiting
-  assert.match(r.stdout, /3\. Add a test for any other case your script handles/);
+  assert.match(r.stdout, /4\. Add a test for any other case your script handles/);
 
   // early exits release the terminal too: refusing to overwrite the file just written
   const again = await runWithOpenStdin([GREET, '--interactive'], ['', '{"name":"ada"}', out, 'n']);
@@ -211,9 +221,9 @@ test('a script that retries with backoff is generated in well under a second, an
     ['checking 1/4', 'checking 2/4', 'checking 3/4', 'checking 4/4']);
   // retries happened (500 -> three attempts) without waiting 2 s each
   assert.equal(r.scenarios.find((s) => s.kind === 'failure').observed.calls.length, 3);
-  assert.match(r.code, /new Gateway\(\{ localDir: LOCAL_DIR, timerScale: 0\.001 \}\)/);
+  assert.match(r.files.find((f) => f.kind === 'setup').code, /timerScale: 0\.001,/);
 
-  fs.writeFileSync(out, r.code);
+  writeTest(r);
   const t1 = Date.now();
   const run = runNodeTest(out);
   assert.equal(run.fail, 0, run.stdout);
@@ -233,4 +243,37 @@ test('a script that never finishes is reported, and each stuck check is run once
   assert.ok(r.warnings.some((w) => /never finished in 2 check\(s\).*setInterval that is never cleared/.test(w)), r.warnings.join('\n'));
   // discovery (2 runs) + 2 checks, each once: about 8 s, not 2 x as long
   assert.ok(Date.now() - t0 < 12000, `took ${Date.now() - t0} ms`);
+});
+
+test('profiling is set up with the test: one setup file feeds both', async () => {
+  const out = path.join(TMP, 'prof', 'greet.test.js');
+  const r = await createTest({ scriptPath: GREET, outFile: out, input: { name: 'ada' } });
+  assert.deepEqual(writeTest(r).map((f) => path.basename(f)), ['greet.setup.js', 'greet.test.js', 'greet.profile.js']);
+  const setupFile = path.join(TMP, 'prof', 'greet.setup.js');
+  const profileFile = path.join(TMP, 'prof', 'greet.profile.js');
+
+  // the profile runs the same script with the same request and backends the tests use
+  const p = spawnSync(process.execPath, [profileFile, '--iterations', '5', '--warmup', '1', '--json'],
+    { encoding: 'utf8', env: CLEAN_ENV, cwd: ROOT });
+  assert.equal(p.status, 0, p.stderr);
+  const report = JSON.parse(p.stdout);
+  assert.equal(report.script, path.join(ROOT, 'examples', 'walkthrough', 'local', 'greet.js'));
+  assert.equal(report.iterations, 5);
+  assert.equal(report.failedRuns, 0);
+  assert.ok(Array.isArray(report.deopts), 'deopts come from the child run with --log-deopt');
+  assert.ok(report.timeline.some((s) => /urlopen.*profiles\.example\.com\/users\/ada/.test(s.what)), 'the mocked backend answered');
+
+  // a real response pasted into the setup reaches the tests and the profile alike
+  const setup = fs.readFileSync(setupFile, 'utf8').replace("body: {} }, // placeholder", "body: { displayName: 'Ada' } },");
+  fs.writeFileSync(setupFile, setup);
+  delete require.cache[require.resolve(setupFile)];
+  const { newGateway, SCRIPT, REQUEST } = require(setupFile);
+  assert.deepEqual((await newGateway().run(SCRIPT, REQUEST)).output.json(), { message: 'Hello, Ada!' });
+  const run = runNodeTest(out);
+  assert.match(run.stdout, /not ok \d+ - responds 200 to a normal request/); // pinned to the old placeholder answer
+
+  // bad options are reported, not ignored
+  const bad = spawnSync(process.execPath, [profileFile, '--iterations', 'lots'], { encoding: 'utf8', env: CLEAN_ENV });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--iterations needs a whole number/);
 });

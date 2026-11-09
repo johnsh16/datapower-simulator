@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * gws-new-test: create a test file for a GatewayScript.
+ * gws-new-test: create a test file for a GatewayScript, set up for profiling too.
+ *
+ * It writes three files (for --out test/orders.test.js):
+ *   test/orders.setup.js     the request and fake backends, shared by the two below
+ *   test/orders.test.js      the tests:    node --test test/orders.test.js
+ *   test/orders.profile.js   the profile:  node test/orders.profile.js
  *
  *   npx gws-new-test                    guided: asks for everything
  *   npx gws-new-test path/to/script.js  guided, script already chosen
@@ -18,7 +23,7 @@
  *                              the current directory, or absolute. Default: worked out from
  *                              the local:/// files the script uses, else the script's folder.
  *   --out <file>               where to write the test (default: test/<script>.test.js)
- *   --force                    overwrite an existing test file
+ *   --force                    overwrite existing test, setup and profile files
  *   --yes                      don't ask questions; use defaults and placeholders
  *   --no-run                   don't run the new test after creating it
  */
@@ -26,7 +31,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
-const { createTest, analyze } = require('../lib/scaffold');
+const { createTest, writeTest, analyze, companionFiles } = require('../lib/scaffold');
 const { findLocalRefs, checkLocalDir, suggestLocalDir } = require('../lib/local-dir');
 
 // ---- arguments ---------------------------------------------------------------
@@ -98,7 +103,7 @@ function findScripts(dir, out = [], depth = 0) {
     if (e.name.startsWith('.') || ['node_modules', 'test', 'tests', 'lib', 'bin', 'docs'].includes(e.name)) continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) findScripts(p, out, depth + 1);
-    else if (/\.js$/.test(e.name) && !/\.test\.js$|mocks?\.js$|run-example|config\.js$/.test(e.name)) {
+    else if (/\.js$/.test(e.name) && !/\.(test|setup|profile)\.js$|mocks?\.js$|run-example|config\.js$/.test(e.name)) {
       const src = fs.readFileSync(p, 'utf8');
       if (/\bsession\.(input|output|name|reject)\b|require\(\s*['"](urlopen|header-metadata|service-metadata)['"]/.test(src)) out.push(path.relative(process.cwd(), p));
     }
@@ -203,8 +208,12 @@ const say = (s = '') => console.log(s);
   // 4. output file
   const base = path.basename(script, '.js');
   let out = opts.out || await ask('Where should the test file go?', path.join('test', `${base}.test.js`));
-  if (fs.existsSync(out) && !opts.force) {
-    const yes = await ask(`${out} already exists. Overwrite it? (y/N)`, interactive ? 'n' : 'n');
+  const companions = companionFiles(out);
+  const existing = [out, companions.setup, companions.profile].filter((f) => fs.existsSync(f));
+  if (existing.length && !opts.force) {
+    const which = existing.length === 1 ? `${existing[0]} already exists` : `These already exist: ${existing.join(', ')}`;
+    if (!interactive) say(`\n${which}.`);
+    const yes = await ask(`${which}. Overwrite ${existing.length === 1 ? 'it' : 'them'}? (y/N)`, 'n');
     if (!/^y/i.test(yes)) { say('\nStopped without changing anything. Use --out to pick another file, or --force.'); return finish(1); }
   }
 
@@ -232,8 +241,7 @@ const say = (s = '') => console.log(s);
   });
 
   closePrompts(); // every question has been asked; release the terminal before the test run
-  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, result.code);
+  writeTest(result);
   const testCount = result.scenarios.length;
 
   // 6. run it
@@ -248,7 +256,10 @@ const say = (s = '') => console.log(s);
     summary = fail ? ` (${pass} passing, ${fail} failing; see below)` : ` (all ${pass} passing)`;
   }
 
-  say(`\nCreated ${out} with ${testCount} test${testCount === 1 ? '' : 's'}${summary}.`);
+  const cmd = (f) => f.split(path.sep).join('/');
+  say(`\nCreated ${out} with ${testCount} test${testCount === 1 ? '' : 's'}${summary},`);
+  say(`and ${companions.profile} to profile the script with the same request and backends.`);
+  say(`Both get them from ${companions.setup}.`);
   if (result.spec.backends.length) {
     say('\nBackends it mocks:');
     for (const b of result.spec.backends) say(`  ${b.method} ${b.target}${b.placeholder ? '   (placeholder response)' : ''}`);
@@ -258,9 +269,10 @@ const say = (s = '') => console.log(s);
     for (const w of result.warnings) say('  - ' + w);
   }
   say('\nNext steps:');
-  say(`  1. Open ${out} and work through the TODO comments.`);
-  say(`  2. Run it:  node --test ${out.split(path.sep).join('/')}`);
-  say('  3. Add a test for any other case your script handles. Copy an existing test and change the request or the backend override.');
+  say(`  1. Open ${companions.setup} and ${out} and work through the TODO comments.`);
+  say(`  2. Run the tests:  node --test ${cmd(out)}`);
+  say(`  3. Profile it:     node ${cmd(companions.profile)}`);
+  say('  4. Add a test for any other case your script handles. Copy an existing test and change the request or the backend override.');
   finish(0);
 })().catch((e) => {
   console.error('\n' + (process.env.GWS_DEBUG ? (e.stack || e) : (e.message || e)));

@@ -109,5 +109,6 @@ test('gws-new-test: explains local:///, re-asks on bad answers, accepts a good o
   assert.match(r.stdout, /That's a file, not a folder/);
   assert.match(r.stdout, /missing: local:\/\/\/lib\/util\.js/);
   assert.match(r.stdout, /OK: your script will be local:\/\/\/apis\/orders\.js/);
-  assert.match(fs.readFileSync(out, 'utf8'), /const SCRIPT = 'local:\/\/\/apis\/orders\.js';/);
+  // the script's local:/// address is in the setup file the test and the profile share
+  assert.match(fs.readFileSync(out.replace(/\.test\.js$/, '.setup.js'), 'utf8'), /const SCRIPT = 'local:\/\/\/apis\/orders\.js';/);
 });
