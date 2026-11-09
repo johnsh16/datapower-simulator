@@ -162,8 +162,13 @@ node bin/gws-run.js examples/profiling/local/slow-report.js \
 
 See [docs/PROFILING.md](docs/PROFILING.md) for how to read the report.
 
+## Retry template
+
+[`templates/retry.test.js`](templates/retry.test.js) tests a script that calls one endpoint several times until it gets a good answer. Copy it, fill in its `CONFIG` block (script, endpoint, attempt limit, valid and invalid answers, expected success and give-up results), and it generates a test per scenario: valid on each attempt, giving up, never calling past the limit, your own call sequences, and strict mode. Full guide: [docs/RETRY-TEMPLATE.md](docs/RETRY-TEMPLATE.md).
+
 ## Known differences from the appliance
 
+- Scripts share Node's global object. After each run the simulator removes any global the script created (an assignment to an undeclared variable), so state can't leak into the next run, logs a warning, and lists the names in `res.leakedGlobals`. On DataPower, which runs GatewayScript in strict mode, the same assignment throws a `ReferenceError`.
 - Default service variable values are placeholders; seed the ones your script depends on.
 - XSLT/XQuery are not executed — you register the result each stylesheet should produce.
 - Error codes are representative, not the exact codes firmware would log.

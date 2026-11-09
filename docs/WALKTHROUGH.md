@@ -323,6 +323,16 @@ gw.urlopen
   .when(url).reply(200, { ok: true });
 ```
 
+**Retry template.** To test retry logic fully without writing each case by hand, copy [`templates/retry.test.js`](../templates/retry.test.js) into your test folder and edit its `CONFIG` block. You set the script, the endpoint, the attempt limit, what valid and invalid answers look like, and what the script returns on success and when it gives up. It generates a test for:
+
+- a valid answer on each attempt from 1 up to the limit;
+- giving up after all-invalid answers, and after all-failed connections;
+- never calling past the limit;
+- any mixed sequences you list, such as `['error', 'invalid', 'valid']`;
+- the script running in strict mode, as on DataPower.
+
+Every test also fails if the script assigns a variable it never declared, which works in the simulator but throws a `ReferenceError` on DataPower. [`examples/retry/local/get-token.js`](../examples/retry/local/get-token.js) is the script the template tests as shipped. [RETRY-TEMPLATE.md](RETRY-TEMPLATE.md) is the full guide: every `CONFIG` option, recipes (HTTP errors as invalid, other backends, backoff, custom answer kinds), reading failures, and troubleshooting.
+
 To make the response depend on the request, pass a function:
 
 ```js
@@ -448,3 +458,4 @@ Run `npx gws-new-test --help` for every option. Once your tests pass, deploy the
 - The [README](../README.md) is the full reference for every module, mock option, and setting.
 - [`examples/local/orchestrate.js`](../examples/local/orchestrate.js) is a larger example: it fetches an OAuth token, calls a backend, and retries on 503. [`examples/run-example.js`](../examples/run-example.js) runs it.
 - [`test/gateway.test.js`](../test/gateway.test.js) has a test for each simulated feature, which makes it a good source of copy-paste snippets.
+- [RETRY-TEMPLATE.md](RETRY-TEMPLATE.md) explains the retry test template, for scripts that call an endpoint until it returns a good answer.
