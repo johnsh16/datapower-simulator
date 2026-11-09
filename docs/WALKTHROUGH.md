@@ -325,6 +325,8 @@ Run `npx gws-new-test --help` for every option. Once your tests pass, deploy the
 | `module 'mq' ... is not emulated` | `jose`, `mq`, `sql`, `ssh` and `b2b` need appliance objects. Provide a fake with `new Gateway({ modules: { mq: {...} } })`. |
 | `transform.xslt: no simulated handler` | Stylesheets aren't executed. Register the result: `gw.transforms['local:///map.xsl'] = (doc, params) => '<out/>'`. |
 | `did not complete within 30000ms` | Something kept running, usually a `setInterval` that was never cleared or a callback that was never called. |
+| Tests of a script with retries or backoff are slow | The script's `setTimeout` delays run in real time. Create the gateway with `new Gateway({ localDir, timerScale: 0.001 })` so they run 1000x faster, in the same order. Tests from `gws-new-test` already do this. |
+| `gws-new-test` prints *"didn't finish within 2 s"* | The script never wrote a response in that situation. The summary at the end lists the usual causes. |
 | Generated test says *"the script crashed"* | See step 8, part 4: fix the script, or replace a placeholder backend response with a real one. |
 | Generator found no backend calls | Your sample request probably took an early exit (like a 400). Run it again with a more realistic `--input`. |
 | Output is empty | Check `res.rejected` and `res.error`. Output written after `session.reject()` is discarded. |
