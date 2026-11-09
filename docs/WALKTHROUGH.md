@@ -204,6 +204,103 @@ test('greets a known user', async () => {
 | `res.rejected`, `res.rejectReason` | Whether the script called `session.reject()` |
 | `res.error` | An uncaught exception, if the script crashed |
 
+### `assert.equal` and `assert.deepEqual`
+
+These two do most of the checking in a test. The walkthrough's tests, and the files `gws-new-test` writes, load them with:
+
+```js
+const assert = require('node:assert/strict');
+```
+
+**Strict mode matters.** In `node:assert/strict`, `assert.equal` *is* `assert.strictEqual` and `assert.deepEqual` *is* `assert.deepStrictEqual`: the same functions under shorter names. Without `/strict` (plain `require('assert')`) you get the older, looser versions, which can pass when values differ only in type. The rest of this section describes strict mode.
+
+#### `assert.equal(actual, expected[, message])`
+
+Passes when the two values are the same, compared with [`Object.is`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is). That's `===`, except that `NaN` equals `NaN` and `0` doesn't equal `-0`. There is no type conversion.
+
+| Parameter | Type | Meaning |
+|---|---|---|
+| `actual` | any | The value your script produced, e.g. `res.statusCode` |
+| `expected` | any | The value it should be |
+| `message` | string or `Error` | Optional. A string is shown above the default explanation; an `Error` is thrown instead of the `AssertionError` |
+
+Use it for single values: status codes, header values, a field of the body, a count. Objects and arrays are compared by **reference**, so two separate objects with the same contents fail; use `deepEqual` for those.
+
+#### `assert.deepEqual(actual, expected[, message])`
+
+Passes when the two values have the same structure and contents, all the way down. Parameters are the same as `equal`. The rules:
+
+- Primitives (numbers, strings, booleans, `null`, `undefined`) are compared with `Object.is`, as in `equal`.
+- Objects must have the **same set of own keys**, in any order. A missing or extra key fails, and so does a key set to `undefined` versus no key at all.
+- Arrays must have the same length and the same elements **in the same order**.
+- Prototypes must match: a class instance doesn't equal a plain object with the same fields, and `Object.create(null)` doesn't equal `{}`.
+- `Date`s compare by time, `RegExp`s by source and flags, `Buffer`s and typed arrays by bytes, `Map`s and `Set`s by contents.
+
+Use it for whole bodies and objects: `res.output.json()`, `res.urlopenCalls[0].json()`, `res.headers.response`.
+
+#### How they behave on simulator results
+
+| Check | Result | Why |
+|---|---|---|
+| `assert.equal(res.statusCode, 200)` | passes | |
+| `assert.equal(res.statusCode, '200')` | **fails** | The status is a number; strict mode doesn't convert `'200'` |
+| `assert.equal(res.headers.response['X-Count'], '3')` | passes | Header values are strings, even if the script set a number |
+| `assert.equal(res.headers.response['X-Count'], 3)` | **fails** | Same reason, the other way round |
+| `assert.equal(res.output.text, '...')` | passes | `text` is the body as a string |
+| `assert.equal(res.output.body, '...')` | **fails** | `body` is a `Buffer`, not a string |
+| `assert.equal(res.output.json(), { id: 7 })` | **fails** | Objects are compared by reference; use `deepEqual` |
+| `assert.deepEqual(res.output.json(), { id: 7, tags: ['a', 'b'] })` | passes | Same keys, same values, same array order |
+| `assert.deepEqual(res.output.json(), { id: 7 })` | **fails** | The body also has `tags`; extra keys fail |
+| `assert.equal(res.output.json().id, 7)` | passes | To check only some fields, check them one at a time |
+| `assert.deepEqual(res.urlopenCalls[0].json(), { id: 7 })` | passes | What the script sent to the backend |
+| `assert.equal(res.urlopenCalls.length, 3)` | passes | e.g. a retry that made three attempts |
+
+For XML responses, compare text rather than parsed documents:
+
+```js
+assert.equal(res.output.text, '<order><id>7</id></order>');
+assert.equal(res.output.xml().getElementsByTagName('id')[0].textContent, '7');
+```
+
+`deepEqual` on two parsed XML documents does work in the simulator, but it compares the XML parser's internal objects, so harmless differences (whitespace, namespace declarations) can fail it.
+
+#### When a check fails
+
+The error explains what differed. For `equal`:
+
+```
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+201 !== 200
+```
+
+For `deepEqual`, a diff marks the actual value with `+` and the expected one with `-`:
+
+```
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  {
+    body: {
++     id: 7
+-     id: 8
+    },
+    status: 200
+  }
+```
+
+A `message` adds context above that explanation, which helps when one test checks several similar things:
+
+```js
+assert.equal(res.urlopenCalls.length, 3, 'should give up after three token attempts');
+```
+
+The error also carries `err.actual`, `err.expected` and `err.operator` (`'strictEqual'` or `'deepStrictEqual'`), which test runners use for their own output.
+
+#### `assert` inside a GatewayScript
+
+GatewayScript has its own `require('assert')` too, for checks inside the script itself. DataPower documents its `assert.equal` as the loose, coercive version (`==`), like Node's non-strict `assert`, so inside a script `assert.equal(200, '200')` passes. In the simulator, a script's `require('assert')` gets Node's non-strict `assert`, which matches that. DataPower describes `deepEqual` only as "tests for deep equality", so for anything beyond simple objects, check its behavior on the appliance before relying on it.
+
 ## 6. Simulate the backend misbehaving
 
 Most production bugs live in error handling, which is hard to trigger against a real backend. With mocks, each failure is one line:
