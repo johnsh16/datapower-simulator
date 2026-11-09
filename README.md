@@ -133,12 +133,6 @@ test('returns 504 when the backend times out', async () => {
 
 Works the same under Jest or Mocha.
 
-### Retry template
-
-[`templates/retry.test.js`](templates/retry.test.js) tests a script that calls one endpoint several times until it gets a good answer. Copy it, fill in its `CONFIG` block (script, endpoint, attempt limit, valid and invalid answers, expected success and give-up results), and it generates a test per scenario: valid on each attempt, giving up, never calling past the limit, your own call sequences, and strict mode. See [the walkthrough](docs/WALKTHROUGH.md#6-simulate-the-backend-misbehaving).
-
-**Undeclared variables.** Scripts share Node's global object, so after each run the simulator removes any global the script created, so state can't leak into the next run. It also logs a warning and lists the names in `res.leakedGlobals`. On DataPower, which runs GatewayScript in strict mode, the same assignment throws a `ReferenceError`.
-
 ## Profiling
 
 `gws-run --profile` runs a script a few hundred times against your mocks and reports CPU time per line, memory allocated per function, V8 deoptimizations, how long each callback blocks, and findings from the performance checklist (input read twice, `require()` in callbacks, `urlopen` without a timeout, large context variables, leaks, and more):
@@ -150,8 +144,13 @@ node bin/gws-run.js examples/profiling/local/slow-report.js \
 
 See [docs/PROFILING.md](docs/PROFILING.md) for how to read the report.
 
+## Retry template
+
+[`templates/retry.test.js`](templates/retry.test.js) tests a script that calls one endpoint several times until it gets a good answer. Copy it, fill in its `CONFIG` block (script, endpoint, attempt limit, valid and invalid answers, expected success and give-up results), and it generates a test per scenario: valid on each attempt, giving up, never calling past the limit, your own call sequences, and strict mode. See [the walkthrough](docs/WALKTHROUGH.md#6-simulate-the-backend-misbehaving).
+
 ## Known differences from the appliance
 
+- Scripts share Node's global object. After each run the simulator removes any global the script created (an assignment to an undeclared variable), so state can't leak into the next run, logs a warning, and lists the names in `res.leakedGlobals`. On DataPower, which runs GatewayScript in strict mode, the same assignment throws a `ReferenceError`.
 - Default service variable values are placeholders; seed the ones your script depends on.
 - XSLT/XQuery are not executed — you register the result each stylesheet should produce.
 - Error codes are representative, not the exact codes firmware would log.
