@@ -210,6 +210,7 @@ const say = (s = '') => console.log(s);
 
   // 5. discovery + generation
   say(`\nRunning ${script} to see which backends it calls...`);
+  let checking = false;
   const result = await createTest({
     scriptPath: script,
     localDir,
@@ -217,6 +218,10 @@ const say = (s = '') => console.log(s);
     input,
     serviceVars,
     date: new Date().toISOString().slice(0, 10),
+    onProgress: (msg) => {
+      if (!checking && msg.startsWith('checking')) { checking = true; say('\nTrying the script in each situation the test will cover:'); }
+      say('  ' + msg);
+    },
     onNewCall: async (b) => {
       say(`  found: ${b.method} ${b.target}`);
       const answer = await ask(

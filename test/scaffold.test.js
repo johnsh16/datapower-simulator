@@ -168,3 +168,69 @@ test('CLI: Node exits once the test is generated, even with stdin still open', a
   assert.equal(again.code, 1);
   assert.match(again.stdout, /Stopped without changing anything/);
 });
+
+// A token fetch that waits 2 s between up to three attempts, like a real retry with backoff.
+const BACKOFF_SCRIPT = `
+  var urlopen = require('urlopen');
+  session.input.readAsJSON(function (e, req) {
+    (function attempt(n) {
+      urlopen.open({ target: 'https://auth.example.com/token', method: 'POST', data: req, timeout: 30 }, function (err, resp) {
+        if (err) { if (n < 3) return setTimeout(function () { attempt(n + 1); }, 2000); return session.output.write({ error: 'failed' }); }
+        resp.readAsJSON(function (e2, t) {
+          if (t && t.access_token) return session.output.write({ token: t.access_token, attempts: n });
+          if (n < 3) return setTimeout(function () { attempt(n + 1); }, 2000);
+          session.output.write({ error: 'invalid' });
+        });
+      });
+    })(1);
+  });`;
+
+test('timerScale shortens script timers but keeps their order', async () => {
+  const { Gateway } = require('..');
+  const code = `var order = [];
+    setTimeout(function () { order.push('slow'); }, 3000);
+    setTimeout(function () { order.push('fast'); }, 1000);
+    setTimeout(function () { session.output.write(order); }, 5000);`;
+  const t0 = Date.now();
+  const res = await new Gateway({ timerScale: 0.001 }).runCode(code);
+  assert.ok(Date.now() - t0 < 1000, `took ${Date.now() - t0} ms`);
+  assert.deepEqual(res.output.json(), ['fast', 'slow']);
+});
+
+test('a script that retries with backoff is generated in well under a second, and so are its tests', async () => {
+  fs.writeFileSync(path.join(TMP, 'local', 'backoff.js'), BACKOFF_SCRIPT);
+  const out = path.join(TMP, 'backoff.test.js');
+  const messages = [];
+  const t0 = Date.now();
+  const r = await createTest({
+    scriptPath: path.join(TMP, 'local', 'backoff.js'), outFile: out, input: { input: 'x' },
+    onNewCall: async () => ({ access_token: 'tok' }), onProgress: (m) => messages.push(m),
+  });
+  assert.ok(Date.now() - t0 < 3000, `generation took ${Date.now() - t0} ms`);
+  assert.deepEqual(messages.filter((m) => m.startsWith('checking')).map((m) => m.split(':')[0]),
+    ['checking 1/4', 'checking 2/4', 'checking 3/4', 'checking 4/4']);
+  // retries happened (500 -> three attempts) without waiting 2 s each
+  assert.equal(r.scenarios.find((s) => s.kind === 'failure').observed.calls.length, 3);
+  assert.match(r.code, /new Gateway\(\{ localDir: LOCAL_DIR, timerScale: 0\.001 \}\)/);
+
+  fs.writeFileSync(out, r.code);
+  const t1 = Date.now();
+  const run = runNodeTest(out);
+  assert.equal(run.fail, 0, run.stdout);
+  assert.ok(Date.now() - t1 < 5000, `generated tests took ${Date.now() - t1} ms`);
+});
+
+test('a script that never finishes is reported, and each stuck check is run once', async () => {
+  fs.writeFileSync(path.join(TMP, 'local', 'stuck.js'), `
+    session.input.readAsJSON(function () { setInterval(function () {}, 1000); });`);
+  const messages = [];
+  const t0 = Date.now();
+  const r = await createTest({
+    scriptPath: path.join(TMP, 'local', 'stuck.js'), outFile: path.join(TMP, 'stuck.test.js'), input: {},
+    onProgress: (m) => messages.push(m),
+  });
+  assert.ok(messages.some((m) => /didn't finish within 2 s/.test(m)), messages.join('\n'));
+  assert.ok(r.warnings.some((w) => /never finished in 2 check\(s\).*setInterval that is never cleared/.test(w)), r.warnings.join('\n'));
+  // discovery (2 runs) + 2 checks, each once: about 8 s, not 2 x as long
+  assert.ok(Date.now() - t0 < 12000, `took ${Date.now() - t0} ms`);
+});
