@@ -211,6 +211,16 @@ gw.urlopen
   .when(url).reply(200, { ok: true });
 ```
 
+**Retry template.** To test retry logic fully without writing each case by hand, copy [`templates/retry.test.js`](../templates/retry.test.js) into your test folder and edit its `CONFIG` block. You set the script, the endpoint, the attempt limit, what valid and invalid answers look like, and what the script returns on success and when it gives up. It generates a test for:
+
+- a valid answer on each attempt from 1 up to the limit;
+- giving up after all-invalid answers, and after all-failed connections;
+- never calling past the limit;
+- any mixed sequences you list, such as `['error', 'invalid', 'valid']`;
+- the script running in strict mode, as on DataPower.
+
+Every test also fails if the script assigns a variable it never declared, which works in the simulator but throws a `ReferenceError` on DataPower. [`examples/retry/local/get-token.js`](../examples/retry/local/get-token.js) is the script the template tests as shipped.
+
 To make the response depend on the request, pass a function:
 
 ```js

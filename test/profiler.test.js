@@ -57,11 +57,12 @@ test('fast example: the same work without the planted problems', async () => {
 
 test('a script that keeps data between transactions is reported as growing', async () => {
   fs.writeFileSync(path.join(TMP, 'leaky.js'), `
-    globalThis.__seen = globalThis.__seen || [];
-    globalThis.__seen.push(Buffer.alloc(8192, 1).toString('hex'));
+    // keeps data on a shared built-in between transactions (a new global would be removed after each run)
+    Buffer.__seen = Buffer.__seen || [];
+    Buffer.__seen.push(Buffer.alloc(8192, 1).toString('hex'));
     session.output.write('ok');`);
   const r = await profile({ script: path.join(TMP, 'leaky.js'), gatewayOptions: { localDir: TMP }, iterations: 40, warmup: 2 });
-  delete globalThis.__seen;
+  delete Buffer.__seen;
   assert.ok(rules(r).has('heap-growth'), `growth was ${r.memory.heapGrowthHalves}`);
 });
 
