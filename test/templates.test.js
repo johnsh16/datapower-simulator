@@ -23,8 +23,8 @@ function runTests(file) {
   return { passed: names(/^ok \d+ - (.+)$/gm), failed: names(/^not ok \d+ - (.+)$/gm), stdout: r.stdout };
 }
 
-/** The template, pointed at a copy of the example script changed by `mutate`. */
-function templateAgainst(name, mutate) {
+/** The template, pointed at a copy of the example script changed by `mutate`, with optional CONFIG edits. */
+function templateAgainst(name, mutate, editTemplate = (t) => t) {
   const dir = path.join(TMP, name);
   fs.mkdirSync(path.join(dir, 'local'), { recursive: true });
   const source = fs.readFileSync(EXAMPLE, 'utf8');
@@ -34,8 +34,9 @@ function templateAgainst(name, mutate) {
   const tpl = fs.readFileSync(TEMPLATE, 'utf8')
     .replace("path.join(__dirname, '..', 'examples', 'retry', 'local')", JSON.stringify(path.join(dir, 'local')))
     .replace("require('..');", `require(${JSON.stringify(ROOT)});`);
+  const edited = editTemplate(tpl);
   const file = path.join(dir, 'retry.test.js');
-  fs.writeFileSync(file, tpl);
+  fs.writeFileSync(file, edited);
   return runTests(file);
 }
 
@@ -86,4 +87,41 @@ test('globals a script creates are removed after the run and reported', async ()
 
   const clean = await gw.runCode(`var x = 1; session.output.write('ok');`);
   assert.deepEqual(clean.leakedGlobals, []);
+});
+
+// The example, changed to load settings from a second backend before getting a token.
+const withSettingsCall = (s) => s.replace("session.input.readAsJSON(async function (err) {",
+  `function loadSettings () {
+  return new Promise(function (resolve, reject) {
+    urlopen.open({ target: 'https://config.example.com/settings', timeout: 5 }, function (err, resp) {
+      if (err) return reject(err)
+      resp.readAsJSON(function (e, j) { e ? reject(e) : resolve(j) })
+    })
+  })
+}
+
+session.input.readAsJSON(async function (err) {
+  try { await loadSettings() } catch (e) { hm.response.statusCode = 500; session.output.write({ error: 'no settings' }); return }`);
+
+test('a script that calls another backend needs it in CONFIG.setup', () => {
+  const without = templateAgainst('other-backend', withSettingsCall);
+  assert.equal(without.passed.length, 0, 'unmocked second backend should fail every test');
+
+  const withSetup = templateAgainst('other-backend-setup', withSettingsCall, (t) => t.replace('  setup(gw) {},',
+    "  setup(gw) { gw.urlopen.when('https://config.example.com/settings').reply(200, { region: 'us' }); },"));
+  assert.deepEqual(withSetup.failed, [], withSetup.stdout);
+  assert.equal(withSetup.passed.length, 9);
+});
+
+test('the endpoint can be a RegExp or a * pattern, and calls are still counted', () => {
+  for (const [name, target] of [['regexp', '/auth\\.example\\.com\\/token$/'], ['glob', "'https://auth.example.com/*'"]]) {
+    const ok = templateAgainst(`target-${name}`, (s) => s + '\n',
+      (t) => t.replace("target: 'https://auth.example.com/token' }", `target: ${target} }`));
+    assert.deepEqual(ok.failed, [], `${name}: ${ok.stdout}`);
+    assert.equal(ok.passed.length, 9, name);
+
+    const tooMany = templateAgainst(`target-${name}-4`, (s) => s.replace('var MAX_ATTEMPTS = 3', 'var MAX_ATTEMPTS = 4'),
+      (t) => t.replace("target: 'https://auth.example.com/token' }", `target: ${target} }`));
+    assert.ok(tooMany.failed.includes('gives up after 3 invalid answers'), `${name}: retrying 4 times must still be caught`);
+  }
 });

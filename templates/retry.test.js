@@ -13,6 +13,8 @@
 //   - every sequence you list in `sequences`, e.g. error, then invalid, then valid
 //   - the script running in strict mode, as on DataPower
 // Each test checks how many times the endpoint was called and what the script returned.
+//
+// Full guide, with every CONFIG option and examples: docs/RETRY-TEMPLATE.md
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -34,7 +36,7 @@ const CONFIG = {
   // What to send it: the second argument to gw.run (input, headers, serviceVars, ...)
   request: { input: { input: 'test_input' } },
 
-  // The endpoint the script retries
+  // The endpoint the script retries. target: an exact URL, a pattern with *, or a RegExp
   endpoint: { method: 'POST', target: 'https://auth.example.com/token' },
 
   // How many times the script should try before giving up
@@ -74,6 +76,10 @@ const CONFIG = {
   // Also run the script with 'use strict', as DataPower does (catches undeclared variables)
   strictMode: true,
 
+  // Mocks for any OTHER backends the script calls (the retried endpoint is set up for
+  // you), or other Gateway setup: gw.urlopen.when('https://other/api').reply(200, {...})
+  setup(gw) {},
+
   // Gateway options: timerScale makes setTimeout backoff 1000x faster (ignored by
   // older gws-sim versions, where waits just take real time)
   gateway: { timerScale: 0.001 },
@@ -90,18 +96,23 @@ function answerFor(name) {
   return a;
 }
 
-/** A gateway whose endpoint answers the named sequence in call order; the last answer repeats. */
+/**
+ * A gateway whose endpoint answers the named sequence in call order; the last answer
+ * repeats. Returns the gateway and the endpoint's routes, whose hits count the calls.
+ */
 function gatewayAnswering(sequence) {
   const gw = new Gateway({ localDir: CONFIG.localDir, ...CONFIG.gateway });
-  sequence.forEach((name, i) => {
+  const routes = sequence.map((name, i) => {
     const a = answerFor(name);
     const route = gw.urlopen.when({ method: endpoint.method, target: endpoint.target });
     if (i < sequence.length - 1) route.times(1);
     if (a.error) route.error(a.error, a.errorCode);
     else if (a.timeout) route.timeout();
     else route.reply(a);
+    return route;
   });
-  return gw;
+  if (CONFIG.setup) CONFIG.setup(gw);   // registered after the endpoint's routes, so those win
+  return { gw, routes };
 }
 
 /** Success on the first 'valid' within maxAttempts, or giving up after maxAttempts calls. */
@@ -113,8 +124,9 @@ function expectedOutcome(sequence) {
   return { succeeds: false, calls: maxAttempts };
 }
 
-const callsToEndpoint = (res) => res.urlopenCalls.filter((c) =>
-  c.method === endpoint.method.toUpperCase() && c.target === endpoint.target).length;
+// Calls that reached the endpoint's routes, however `target` is written
+const callsToEndpoint = (routes) => routes.reduce((n, r) => n + r.hits, 0);
+const endpointLabel = `${endpoint.method} ${endpoint.target}`;
 
 function describeRun(res) {
   return [
@@ -126,14 +138,15 @@ function describeRun(res) {
 
 async function check(sequence, runIt = (gw) => gw.run(CONFIG.script, CONFIG.request)) {
   const expected = expectedOutcome(sequence);
-  const res = await runIt(gatewayAnswering(sequence));
+  const { gw, routes } = gatewayAnswering(sequence);
+  const res = await runIt(gw);
   const context = `\n  ${describeRun(res)}`;
   assert.equal(res.error, null, (res.error && res.error.stack) + context);
   assert.deepEqual(res.leakedGlobals || [], [],
     `the script assigned undeclared variable(s) ${(res.leakedGlobals || []).join(', ')}: on DataPower (strict mode) ` +
     'that throws a ReferenceError. Declare them with var.' + context);
-  assert.equal(callsToEndpoint(res), expected.calls,
-    `expected ${expected.calls} call(s) to ${endpoint.method} ${endpoint.target}, got ${callsToEndpoint(res)}` + context);
+  assert.equal(callsToEndpoint(routes), expected.calls,
+    `expected ${expected.calls} call(s) to ${endpointLabel}, got ${callsToEndpoint(routes)}` + context);
   try {
     if (expected.succeeds) CONFIG.expectSuccess(res, expected.attempt);
     else CONFIG.expectGaveUp(res);

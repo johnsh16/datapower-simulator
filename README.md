@@ -146,7 +146,7 @@ See [docs/PROFILING.md](docs/PROFILING.md) for how to read the report.
 
 ## Retry template
 
-[`templates/retry.test.js`](templates/retry.test.js) tests a script that calls one endpoint several times until it gets a good answer. Copy it, fill in its `CONFIG` block (script, endpoint, attempt limit, valid and invalid answers, expected success and give-up results), and it generates a test per scenario: valid on each attempt, giving up, never calling past the limit, your own call sequences, and strict mode. See [the walkthrough](docs/WALKTHROUGH.md#6-simulate-the-backend-misbehaving).
+[`templates/retry.test.js`](templates/retry.test.js) tests a script that calls one endpoint several times until it gets a good answer. Copy it, fill in its `CONFIG` block (script, endpoint, attempt limit, valid and invalid answers, expected success and give-up results), and it generates a test per scenario: valid on each attempt, giving up, never calling past the limit, your own call sequences, and strict mode. Full guide: [docs/RETRY-TEMPLATE.md](docs/RETRY-TEMPLATE.md).
 
 ## Known differences from the appliance
 
