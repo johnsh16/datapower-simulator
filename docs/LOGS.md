@@ -51,7 +51,7 @@ backends:
      sent:     grant_type=client_credentials
      received: 200 {"access_token":"token_text"}
 script log:
-  [warn] Token attempt 1 failed: invalid token response
+  console.warn    Token attempt 1 failed: invalid token response
 ```
 
 | Line | What it shows |
@@ -61,9 +61,11 @@ script log:
 | `request:` | The `input`, `headers`, `serviceVars` and `parameters` you passed. |
 | `status:` / `output:` / `headers:` | What the script returned. `(script threw an error)` or `(rejected: ...)` follows the status when that happened. |
 | `backends:` | Every `urlopen.open` call in order: what was sent, and the response or the reason it failed (`error: connection refused`, a timeout). `[no mock matched]` marks a call you didn't mock. |
-| `script log:` | Everything the script logged with `console.*`, with its level. |
+| `script log:` | Every `console.log`, `console.info`, `console.error`, ... call made by the script and the modules it requires, in order, with the method used. Messages from the simulator itself show their level and source instead, e.g. `[warn] (gws-sim) ...`. |
 | `undeclared variables:` | Variables the script assigned without `var`. On DataPower (strict mode) that's a ReferenceError. |
 | `error:` | The stack trace, if the script threw. |
+
+`console.log` calls in your **test files** (not the script) show up in the terminal, so they're in `results.log`, just above the test that made them.
 
 Bodies and messages longer than 2000 characters are cut, with a note saying how much was left out.
 

@@ -17,6 +17,8 @@ test('run log: request, label, caller, backend calls, script log', async () => {
   const code = `
     var urlopen = require('urlopen');
     console.info('calling');
+    console.log('obj', { a: 1 });
+    console.error('bad');
     urlopen.open({ target: 'https://api.example.com/ok', method: 'POST', data: 'ping' }, function (e, r) {
       urlopen.open({ target: 'https://down.example.com/' }, function (e2) {
         session.output.write(e2 ? 'down' : 'up');
@@ -30,7 +32,9 @@ test('run log: request, label, caller, backend calls, script log', async () => {
   assert.match(log, /output: {4}down/);
   assert.match(log, /1\. POST https:\/\/api\.example\.com\/ok\n {5}sent: {5}ping\n {5}received: 200 /);
   assert.match(log, /2\. GET https:\/\/down\.example\.com\/ {2}\[no mock matched\]\n {5}received: error: \S/);
-  assert.match(log, /\[info\] calling/);
+  assert.match(log, /console\.info\s+calling/);
+  assert.match(log, /console\.log\s+obj \{ a: 1 \}/);
+  assert.match(log, /console\.error\s+bad/);
 });
 
 test('run log: numbers runs, shows errors, cuts long text', async () => {
