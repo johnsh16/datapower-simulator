@@ -8,7 +8,7 @@ Run DataPower GatewayScript actions locally, unchanged, with the appliance's glo
 
 ```bash
 npm install
-npm test                       # simulator and test-generator tests
+npm test                       # simulator and test-generator tests; output saved to logs/
 node examples/run-example.js   # token + backend orchestration with a retried 503
 ```
 
@@ -110,11 +110,11 @@ Which modules DataPower provides, with sources and confidence levels: [docs/MODU
 
 ## Gateway options
 
-`localDir` (the folder that stands for `local:///`; it must hold files in the same layout as the appliance, so `local:///lib/x.js` is `<localDir>/lib/x.js`), `storeDir`, `temporaryDir`, `printLogs` (`true` or a level), `appendOutput`, `allowNodeModules`, `maxSimulatedDelayMs`, `realDelays`, `timerScale` (multiplies the script's `setTimeout`/`setInterval` delays: `0.001` makes a 2 s retry backoff take 2 ms while keeping timers in order; tests made by `gws-new-test` use it), `timeoutMs` (default 30 s; a run that never finishes fails), `serviceVars` / `systemVars` (defaults for every run), `modules`, `globals`, `mocks`, `transforms`, `rules`, `keys`.
+`localDir` (the folder that stands for `local:///`; it must hold files in the same layout as the appliance, so `local:///lib/x.js` is `<localDir>/lib/x.js`), `storeDir`, `temporaryDir`, `printLogs` (`true` or a level), `appendOutput`, `allowNodeModules`, `maxSimulatedDelayMs`, `realDelays`, `timerScale` (multiplies the script's `setTimeout`/`setInterval` delays: `0.001` makes a 2 s retry backoff take 2 ms while keeping timers in order; tests made by `gws-new-test` use it), `timeoutMs` (default 30 s; a run that never finishes fails), `runLogDir` (folder for the run log, see [Test logs](#test-logs); `null` turns it off), `serviceVars` / `systemVars` (defaults for every run), `modules`, `globals`, `mocks`, `transforms`, `rules`, `keys`.
 
 ## Run options
 
-`input`, `headers` (plain object, or `{ original, current, response }`), `serviceVars`, `systemVars`, `contexts` (`{ name: body }` or `{ name: { body, variables } }`), `parameters`, `apim` (variable tree), `mocks`, `transforms`, `rules`, `modules`, `globals`, `timeoutMs`.
+`input`, `headers` (plain object, or `{ original, current, response }`), `serviceVars`, `systemVars`, `contexts` (`{ name: body }` or `{ name: { body, variables } }`), `parameters`, `apim` (variable tree), `mocks`, `transforms`, `rules`, `modules`, `globals`, `timeoutMs`, `label` (names the run in the test log).
 
 ## Using it with a test runner
 
@@ -132,6 +132,10 @@ test('returns 504 when the backend times out', async () => {
 ```
 
 Works the same under Jest or Mocha.
+
+### Test logs
+
+Run tests with `npx gws-test` (this repo's `npm test` uses it) to save their output to `logs/` at the project root, one folder per run plus `logs/latest/`: `results.log` holds what the terminal showed, and `runs/<test file>.log` records every script run (request, status, output, each backend call sent and received, and what the script logged). Pass `label` in the run options to name a run in the log. The `runLogDir` Gateway option or the `GWS_RUN_LOG_DIR` variable turns the run log on without the runner. Details: [docs/LOGS.md](docs/LOGS.md).
 
 ### Test helpers
 

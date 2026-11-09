@@ -151,6 +151,8 @@ npm run test:walkthrough
 
 You should see twelve passing tests: six in `greet.test.js` and the same six in `greet.helpers.test.js`, which is written with the test helpers.
 
+The output is also saved: `npm test` and `npm run test:walkthrough` run the tests through `gws-test`, which writes a new folder under `logs/` at the project root each time (`logs/latest/` is always the newest). `results.log` is what the terminal showed. `runs/greet.test.log` records every script run: what it was sent, what each backend returned and what the script logged. In your own project, run `npx gws-test`. See [LOGS.md](LOGS.md).
+
 Each test follows the same three steps:
 
 ```js
@@ -452,10 +454,12 @@ Run `npx gws-new-test --help` for every option. Once your tests pass, deploy the
 | Generated test says *"the script crashed"* | See step 8, part 4: fix the script, or replace a placeholder backend response with a real one. |
 | Generator found no backend calls | Your sample request probably took an early exit (like a 400). Run it again with a more realistic `--input`. |
 | Output is empty | Check `res.rejected` and `res.error`. Output written after `session.reject()` is discarded. |
+| A test failed and you want to see what the script did | Open `logs/latest/runs/<test file>.log`: each run's request, status, output, backend calls and script log. Run with `npx gws-test` (or `npm test`) to create it. See [LOGS.md](LOGS.md). |
 
 ## 10. Where to go next
 
 - The [README](../README.md) is the full reference for every module, mock option, and setting.
 - [`examples/local/orchestrate.js`](../examples/local/orchestrate.js) is a larger example: it fetches an OAuth token, calls a backend, and retries on 503. [`examples/run-example.js`](../examples/run-example.js) runs it.
 - [`test/gateway.test.js`](../test/gateway.test.js) has a test for each simulated feature, which makes it a good source of copy-paste snippets.
+- [LOGS.md](LOGS.md) explains the test logs written to `logs/`.
 - [RETRY-TEMPLATE.md](RETRY-TEMPLATE.md) explains the retry test template, for scripts that call an endpoint until it returns a good answer.

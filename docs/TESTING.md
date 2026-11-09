@@ -47,6 +47,8 @@ Run:
 
 Every failure ends with this summary: status, error or reject reason, body, response headers, each backend call with its result (and any that matched no mock), and warning or error logs.
 
+For the full picture (what was sent on each call, every log line, runs that passed), run the tests with `npx gws-test` and open `logs/latest/runs/<test file>.log`. See [LOGS.md](LOGS.md).
+
 ## `expectRun(res)` checks
 
 Each check returns the same object, so they chain. Wherever a check takes an expected value, you can pass:

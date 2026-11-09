@@ -26,6 +26,8 @@
    node --test test\testRetry.retry.test.js
    ```
 
+   Or `npx gws-test test\testRetry.retry.test.js` to also save the output to `logs\` (see [LOGS.md](LOGS.md)).
+
 As shipped, the template tests [`examples/retry/local/get-token.js`](../examples/retry/local/get-token.js), so you can run it unchanged first to see what it does: `node --test templates/retry.test.js`.
 
 **Where the copy lives decides two lines:**
@@ -179,6 +181,8 @@ The run summary shows:
 - the status and body the script returned;
 - every backend call, in order, with its result (`error` for a connection failure or timeout);
 - any warnings and errors the script or the simulator logged.
+
+For more, run the tests with `npx gws-test` and open `logs\latest\runs\<test file>.log`. Each run is labelled with its test (for example `"valid on attempt 2: invalid -> valid"`) and shows what was sent on each call, everything the script logged, and the full error. See [LOGS.md](LOGS.md).
 
 ## Troubleshooting
 

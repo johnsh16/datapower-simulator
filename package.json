@@ -4,9 +4,9 @@
   "description": "DataPower GatewayScript simulator for Node.js with mockable urlopen",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node bin/gws-test.js test/*.test.js",
     "example": "node examples/run-example.js",
-    "test:walkthrough": "node --test examples/walkthrough/greet.test.js examples/walkthrough/greet.helpers.test.js",
+    "test:walkthrough": "node bin/gws-test.js examples/walkthrough/greet.test.js examples/walkthrough/greet.helpers.test.js",
     "new-test": "node bin/gws-new-test.js"
   },
   "keywords": [
@@ -23,7 +23,8 @@
   },
   "bin": {
     "gws-run": "bin/gws-run.js",
-    "gws-new-test": "bin/gws-new-test.js"
+    "gws-new-test": "bin/gws-new-test.js",
+    "gws-test": "bin/gws-test.js"
   },
   "engines": {
     "node": ">=18"

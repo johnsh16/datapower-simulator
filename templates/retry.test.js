@@ -136,7 +136,15 @@ function describeRun(res) {
   ].join('\n  ');
 }
 
-async function check(sequence, runIt = (gw) => gw.run(CONFIG.script, CONFIG.request)) {
+const label = (sequence) => sequence.join(' -> ');
+
+// e.g. "valid on attempt 2: invalid -> valid": the run log's label for each run
+const runLabel = (sequence) => {
+  const o = expectedOutcome(sequence);
+  return `${o.succeeds ? `valid on attempt ${o.attempt}` : `gives up after ${o.calls} calls`}: ${label(sequence)}`;
+};
+
+async function check(sequence, runIt = (gw) => gw.run(CONFIG.script, { ...CONFIG.request, label: runLabel(sequence) })) {
   const expected = expectedOutcome(sequence);
   const { gw, routes } = gatewayAnswering(sequence);
   const res = await runIt(gw);
@@ -155,8 +163,6 @@ async function check(sequence, runIt = (gw) => gw.run(CONFIG.script, CONFIG.requ
     throw e;
   }
 }
-
-const label = (sequence) => sequence.join(' -> ');
 
 // valid on attempt 1..maxAttempts
 for (let invalidFirst = 0; invalidFirst < maxAttempts; invalidFirst++) {
@@ -181,6 +187,6 @@ if (CONFIG.strictMode) {
   test('works in strict mode, as on DataPower', () => {
     const file = path.join(CONFIG.localDir, CONFIG.script.replace(/^local:\/\/\/?/, ''));
     const source = "'use strict';\n" + fs.readFileSync(file, 'utf8');
-    return check(['invalid', 'valid'], (gw) => gw.runCode(source, { ...CONFIG.request, filename: file }));
+    return check(['invalid', 'valid'], (gw) => gw.runCode(source, { ...CONFIG.request, filename: file, label: 'strict mode: invalid -> valid' }));
   });
 }
