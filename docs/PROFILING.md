@@ -31,18 +31,37 @@ node bin/gws-run.js examples/profiling/local/slow-report.js \
 
 Your numbers will differ; the ratio is what matters.
 
+## Profile your own script
+
+`gws-new-test` sets profiling up when it creates a test (see [step 8 of the walkthrough](WALKTHROUGH.md#8-create-a-test-for-your-own-script)). For `--out test/orders.test.js` it writes three files:
+
+| File | What it holds |
+|---|---|
+| `test/orders.setup.js` | The request, the fake backends, and the gateway options |
+| `test/orders.test.js` | The tests, run with `node --test test/orders.test.js` |
+| `test/orders.profile.js` | The profile, run with `node test/orders.profile.js` |
+
+```bash
+node test/orders.profile.js
+node test/orders.profile.js --iterations 500 --profile-out profiles
+```
+
+The tests and the profile both load the setup file, so a real backend response you paste into `BACKENDS` there is what the tests check and what the profile measures. There's no separate `--input` or `--mocks` to keep in step.
+
+A small sample request says little about how a script copes with real traffic. To profile a bigger one without changing what the tests send, override `runOptions` in the profile file; it has a commented-out example.
+
 ## Options
 
 | Option | Default | What it does |
 |---|---|---|
-| `--profile` | | Turn profiling on. Takes the usual `--input`, `--headers`, `--service-vars`, `--mocks`, ... |
+| `--profile` | | `gws-run` only: turn profiling on. Takes the usual `--input`, `--headers`, `--service-vars`, `--mocks`, ... A generated `.profile.js` file always profiles, and gets the request and mocks from its setup file. |
 | `--iterations <n>` | 200 | Transactions to measure. Raise it if "Hottest lines" says too little was sampled. |
 | `--warmup <n>` | 30 | Transactions run first, unmeasured, so V8 has optimized the hot code. |
 | `--top <n>` | 10 | Rows per table. |
 | `--profile-out <dir>` | | Also save `.cpuprofile` and `.heapprofile` files, plus the report as `.txt` and `.json`. |
 | `--json` | | Print the report as JSON instead of text. |
 
-Every backend the script calls needs a mock. Real network latency would drown out the numbers, so `--passthrough` isn't allowed with `--profile`.
+The other options work the same for `gws-run --profile` and a generated `.profile.js` file. Every backend the script calls needs a mock. Real network latency would drown out the numbers, so `--passthrough` isn't allowed with `--profile`.
 
 ## Reading the report
 
@@ -105,7 +124,18 @@ const report = await profile({
 console.log(formatReport(report));
 ```
 
-Deoptimizations need V8's deopt log, which can only be turned on when Node starts, so they're only collected through `gws-run --profile`.
+`profile()` returns the report without deoptimizations: they need V8's deopt log, which can only be turned on when Node starts. `runProfile()` takes the same options, re-runs your program in a child Node process with that log on, and prints the full report. It's what `gws-run --profile` and the generated `.profile.js` files use:
+
+```js
+const { runProfile } = require('gws-sim').profiler;
+
+runProfile({
+  script: 'local:///orders.js',
+  gatewayOptions: { localDir: 'local' },
+  runOptions: { input: { id: 7 } },
+  setup: (gw) => gw.urlopen.when(/orders/).reply(200, { items: [] }),
+}, process.argv.slice(2)); // optional: accept --iterations, --warmup, --top, --profile-out, --json
+```
 
 ## How close is this to the appliance?
 
